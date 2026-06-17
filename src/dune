@@ -1,0 +1,6 @@
+(library
+ (name bonsai_android)
+ (public_name bonsai_android)
+ (libraries bonsai_native)
+ (preprocess
+  (pps ppx_jane bonsai.ppx_bonsai)))

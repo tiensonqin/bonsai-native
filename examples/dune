@@ -1,0 +1,6 @@
+(executables
+ (names counter export_counter_json android_counter_entry)
+ (modules counter_component counter export_counter_json android_counter_entry)
+ (libraries bonsai_android core)
+ (preprocess
+  (pps ppx_jane bonsai.ppx_bonsai)))
