@@ -451,7 +451,7 @@ private struct BonsaiNativeNodeView: View {
       Image(systemName: node.text)
 
     case .listRow:
-      listRow
+      BonsaiNativeListRowView(node: node, model: model)
 
     case .section:
       section
@@ -559,95 +559,6 @@ private struct BonsaiNativeNodeView: View {
     }
   }
 
-  private var listRow: some View {
-    VStack(spacing: 0) {
-      HStack(spacing: 14) {
-        if let leadingImage = node.rowLeadingSystemImage {
-          Button {
-            withAnimation(.spring(response: 0.26, dampingFraction: 0.78)) {
-              model.sendClick(node.rowLeadingEventId)
-            }
-          } label: {
-            Image(
-              systemName: node.rowLeadingSelected
-                ? (node.rowLeadingSelectedSystemImage ?? leadingImage)
-                : leadingImage
-            )
-              .font(.system(size: 25, weight: .regular))
-              .symbolRenderingMode(.hierarchical)
-              .foregroundStyle(
-                node.rowLeadingSelected
-                  ? Color.green
-                  : Color.secondary.opacity(0.35)
-              )
-              .frame(width: 32, height: 32)
-              .contentShape(.rect)
-          }
-          .buttonStyle(.plain)
-          .accessibilityLabel(node.rowLeadingAccessibilityLabel)
-        }
-
-        listRowMainContent
-      }
-      .frame(minHeight: 71)
-
-      Divider()
-        .padding(.leading, node.rowLeadingSystemImage == nil ? 0 : 46)
-    }
-    .padding(.horizontal, 16)
-    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-      ForEach(node.rowActions) { action in
-        Button(role: action.style == 1 ? .destructive : nil) {
-          model.sendClick(action.eventId)
-        } label: {
-          if let systemImage = action.systemImage {
-            Label(action.title, systemImage: systemImage)
-          } else {
-            Text(action.title)
-          }
-        }
-        .tint(action.style == 1 ? .red : .blue)
-      }
-    }
-  }
-
-  @ViewBuilder
-  private var listRowMainContent: some View {
-    let content = HStack(spacing: 14) {
-        VStack(alignment: .leading, spacing: 3) {
-          Text(node.text)
-            .font(.subheadline)
-            .foregroundStyle(node.rowTitleStrikethrough ? .secondary : .primary)
-            .strikethrough(node.rowTitleStrikethrough, color: .secondary)
-            .lineLimit(1)
-          if !node.rowSubtitle.isEmpty {
-            Text(node.rowSubtitle)
-              .font(.subheadline)
-              .foregroundStyle(.secondary)
-              .lineLimit(1)
-          }
-        }
-        .layoutPriority(1)
-
-        Spacer(minLength: 12)
-
-        if !node.rowTrailingText.isEmpty {
-          Text(node.rowTrailingText)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
-            .layoutPriority(2)
-        }
-      }
-
-    content
-      .contentShape(.rect)
-      .onTapGesture {
-        model.sendClick(node.clickEventId)
-      }
-  }
-
   private var tabSelection: Binding<String> {
     Binding(
       get: { node.selectedTabId },
@@ -746,7 +657,7 @@ private struct BonsaiNativeNodeView: View {
           let systemImage = tab.systemImage ?? "circle"
           if tab.role == 1 {
             Tab(value: tab.id, role: .search) {
-              BonsaiNativeNodeView(node: node.children[index], model: model)
+              searchTabContent(index: index)
             } label: {
               Label(tab.title, systemImage: systemImage)
             }
@@ -771,6 +682,19 @@ private struct BonsaiNativeNodeView: View {
     }
   }
 
+  @ViewBuilder
+  @available(iOS 18.0, *)
+  private func searchTabContent(index: Int) -> some View {
+    if #available(iOS 26.0, *) {
+      NavigationStack {
+        BonsaiNativeNodeView(node: node.children[index], model: model)
+      }
+      .tabViewSearchActivation(.searchTabSelection)
+    } else {
+      BonsaiNativeNodeView(node: node.children[index], model: model)
+    }
+  }
+
   private var legacyTabView: some View {
     TabView(selection: tabSelection) {
       ForEach(Array(node.tabs.enumerated()), id: \.element.id) { index, tab in
@@ -790,6 +714,155 @@ private struct BonsaiNativeNodeView: View {
 
   private func applyModifiers<Content: View>(to content: Content) -> some View {
     content.modifier(BonsaiNativeNodeModifiers(node: node, model: model))
+  }
+}
+
+private struct BonsaiNativeListRowView: View {
+  @ObservedObject var node: BonsaiNativeNode
+  @ObservedObject var model: BonsaiNativeHostModel
+  @State private var offset: CGFloat = 0
+
+  private let actionWidth: CGFloat = 82
+
+  private var maxOffset: CGFloat {
+    -CGFloat(node.rowActions.count) * actionWidth
+  }
+
+  var body: some View {
+    ZStack(alignment: .trailing) {
+      actionButtons
+
+      rowContent
+        .background(Color(uiColor: .systemGroupedBackground))
+        .offset(x: offset)
+        .gesture(
+          DragGesture(minimumDistance: 12, coordinateSpace: .local)
+            .onChanged { value in
+              guard abs(value.translation.width) > abs(value.translation.height) else {
+                return
+              }
+              let proposed = value.translation.width
+              offset = min(0, max(maxOffset, proposed))
+            }
+            .onEnded { value in
+              guard !node.rowActions.isEmpty else {
+                offset = 0
+                return
+              }
+              let shouldOpen = value.translation.width < -40
+              withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
+                offset = shouldOpen ? maxOffset : 0
+              }
+            }
+        )
+    }
+    .clipped()
+  }
+
+  private var actionButtons: some View {
+    HStack(spacing: 0) {
+      ForEach(node.rowActions) { action in
+        actionButton(for: action)
+      }
+    }
+  }
+
+  private func actionButton(for action: BonsaiNativeRowAction) -> some View {
+    Button {
+      withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
+        offset = 0
+      }
+      model.sendClick(action.eventId)
+    } label: {
+      actionLabel(for: action)
+    }
+    .buttonStyle(.plain)
+  }
+
+  private func actionLabel(for action: BonsaiNativeRowAction) -> some View {
+    VStack(spacing: 4) {
+      if let systemImage = action.systemImage {
+        Image(systemName: systemImage)
+      }
+      Text(action.title)
+        .font(.caption2)
+    }
+    .frame(width: actionWidth)
+    .frame(minHeight: 71)
+    .foregroundStyle(.white)
+    .background(action.style == 1 ? Color.red : Color.blue)
+  }
+
+  private var rowContent: some View {
+    VStack(spacing: 0) {
+      HStack(spacing: 14) {
+        if let leadingImage = node.rowLeadingSystemImage {
+          Button {
+            withAnimation(.spring(response: 0.26, dampingFraction: 0.78)) {
+              model.sendClick(node.rowLeadingEventId)
+            }
+          } label: {
+            Image(
+              systemName: node.rowLeadingSelected
+                ? (node.rowLeadingSelectedSystemImage ?? leadingImage)
+                : leadingImage
+            )
+              .font(.system(size: 25, weight: .regular))
+              .symbolRenderingMode(.hierarchical)
+              .foregroundStyle(
+                node.rowLeadingSelected
+                  ? Color.green
+                  : Color.secondary.opacity(0.35)
+              )
+              .frame(width: 32, height: 32)
+              .contentShape(.rect)
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel(node.rowLeadingAccessibilityLabel)
+        }
+
+        rowMainContent
+      }
+      .frame(minHeight: 71)
+
+      Divider()
+        .padding(.leading, node.rowLeadingSystemImage == nil ? 0 : 46)
+    }
+    .padding(.horizontal, 16)
+  }
+
+  private var rowMainContent: some View {
+    HStack(spacing: 14) {
+      VStack(alignment: .leading, spacing: 3) {
+        Text(node.text)
+          .font(.subheadline)
+          .foregroundStyle(node.rowTitleStrikethrough ? .secondary : .primary)
+          .strikethrough(node.rowTitleStrikethrough, color: .secondary)
+          .lineLimit(1)
+        if !node.rowSubtitle.isEmpty {
+          Text(node.rowSubtitle)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+      }
+      .layoutPriority(1)
+
+      Spacer(minLength: 12)
+
+      if !node.rowTrailingText.isEmpty {
+        Text(node.rowTrailingText)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .fixedSize(horizontal: true, vertical: false)
+          .layoutPriority(2)
+      }
+    }
+    .contentShape(.rect)
+    .onTapGesture {
+      model.sendClick(node.clickEventId)
+    }
   }
 }
 
