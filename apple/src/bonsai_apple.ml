@@ -2681,6 +2681,11 @@ module For_testing = struct
       | None -> failwithf "View has no row menu action with title %S" title ()
     ;;
 
+    let click_sheet_row_menu_action_exn view ~path ~sheet_path ~title =
+      let view = find_exn view ~path in
+      click_row_menu_action_exn (presented_sheet_content_exn view) ~path:sheet_path ~title
+    ;;
+
     let find_text_exn view ~path =
       let view = find_exn view ~path in
       match view.text with

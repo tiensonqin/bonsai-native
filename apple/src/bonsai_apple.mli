@@ -682,6 +682,12 @@ module For_testing : sig
     val click_row_leading_exn : view -> path:int list -> unit
     val click_row_action_exn : view -> path:int list -> title:string -> unit
     val click_row_menu_action_exn : view -> path:int list -> title:string -> unit
+    val click_sheet_row_menu_action_exn
+      :  view
+      -> path:int list
+      -> sheet_path:int list
+      -> title:string
+      -> unit
     val find_text_exn : view -> path:int list -> string
   end
 end
