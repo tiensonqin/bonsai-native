@@ -296,39 +296,78 @@ module Bridge = struct
   ;;
 end
 
-module App = struct
-  type t =
-    { driver : node Bonsai_driver.t
-    ; mutable bridge : Bridge.t option
+module App_driver = struct
+  type ('result, 'rendered) t =
+    { driver : 'result Bonsai_driver.t
+    ; mutable rendered : 'rendered option
+    ; render : schedule_event:(unit Effect.t -> unit) -> 'result -> 'rendered
+    ; update :
+        'rendered -> schedule_event:(unit Effect.t -> unit) -> 'result -> 'rendered
     }
 
-  let create ?optimize ~time_source component =
+  let create ?optimize ~time_source component ~render ~update =
     let instrumentation = Bonsai_driver.Instrumentation.default_for_test_handles () in
     let driver = Bonsai_driver.create ?optimize ~instrumentation ~time_source component in
-    { driver; bridge = None }
+    { driver; rendered = None; render; update }
   ;;
+
+  let render_current_result t ~schedule_event =
+    let result = Bonsai_driver.result t.driver in
+    t.rendered
+    <- Some
+         (match t.rendered with
+          | None -> t.render ~schedule_event result
+          | Some rendered -> t.update rendered ~schedule_event result)
+  ;;
+
+  let rendered t = t.rendered
+  let schedule_event t event = Bonsai_driver.schedule_event t.driver event
 
   let flush t =
     Bonsai_driver.flush t.driver;
-    let node = Bonsai_driver.result t.driver in
-    t.bridge
-    <- Some
-         (Bridge.render
-            ~schedule_event:(fun event -> Bonsai_driver.schedule_event t.driver event)
-            node);
+    render_current_result t ~schedule_event:(schedule_event t);
     Bonsai_driver.trigger_lifecycles t.driver
   ;;
 
+  let rec flush_and_render t =
+    Bonsai_driver.flush t.driver;
+    render_current_result t ~schedule_event:(schedule_event_and_render t);
+    Bonsai_driver.trigger_lifecycles t.driver;
+    Bonsai_driver.flush t.driver;
+    render_current_result t ~schedule_event:(schedule_event_and_render t)
+
+  and schedule_event_and_render t event =
+    Effect.Expert.eval
+      event
+      ~on_exn:(fun exn -> Exn.reraise exn "Unhandled exception raised in effect")
+      ~f:(fun () -> flush_and_render t)
+  ;;
+end
+
+module App = struct
+  type t = (node, Bridge.t) App_driver.t
+
+  let create ?optimize ~time_source component =
+    App_driver.create
+      ?optimize
+      ~time_source
+      component
+      ~render:(fun ~schedule_event node -> Bridge.render ~schedule_event node)
+      ~update:(fun _bridge ~schedule_event node -> Bridge.render ~schedule_event node)
+  ;;
+
   let render_json t =
-    flush t;
-    t.bridge |> Option.value_exn |> Bridge.json
+    App_driver.flush t;
+    t |> App_driver.rendered |> Option.value_exn |> Bridge.json
   ;;
 
   let dispatch_click t event_id =
-    Option.iter t.bridge ~f:(fun bridge -> Bridge.dispatch_click bridge event_id)
+    Option.iter (App_driver.rendered t) ~f:(fun bridge ->
+      Bridge.dispatch_click bridge event_id)
   ;;
 
   let dispatch_change t event_id ~text =
-    Option.iter t.bridge ~f:(fun bridge -> Bridge.dispatch_change bridge event_id ~text)
+    Option.iter (App_driver.rendered t) ~f:(fun bridge ->
+      Bridge.dispatch_change bridge event_id ~text)
   ;;
 end

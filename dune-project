@@ -11,6 +11,7 @@
   (ocaml (>= 5.1.0))
   dune
   (bonsai (= v0.18~preview.130.100+614))
+  bonsai_native
   (core (= v0.18~preview.130.100+614))
   (ppx_jane (= v0.18~preview.130.100+614))))
 

@@ -1606,40 +1606,22 @@ module App = struct
   module Make (Backend : Renderer.Backend) = struct
     module R = Renderer.Make (Backend)
 
-    type t =
-      { driver : node Bonsai_driver.t
-      ; mutable mounted : R.t option
-      }
+    type t = (node, R.t) Bonsai_native.App_driver.t
 
     let create ?optimize ~time_source component =
-      let instrumentation = Bonsai_driver.Instrumentation.default_for_test_handles () in
-      let driver = Bonsai_driver.create ?optimize ~instrumentation ~time_source component in
-      { driver; mounted = None }
+      Bonsai_native.App_driver.create
+        ?optimize
+        ~time_source
+        component
+        ~render:(fun ~schedule_event node -> R.mount ~schedule_event node)
+        ~update:(fun mounted ~schedule_event:_ node ->
+          R.update mounted node;
+          mounted)
     ;;
 
-    let rec render_current_result t =
-      let node = Bonsai_driver.result t.driver in
-      (match t.mounted with
-       | None ->
-         t.mounted
-         <- Some (R.mount ~schedule_event:(schedule_event_and_render t) node)
-       | Some mounted -> R.update mounted node)
+    let flush_and_render = Bonsai_native.App_driver.flush_and_render
 
-    and flush_and_render t =
-      Bonsai_driver.flush t.driver;
-      render_current_result t;
-      Bonsai_driver.trigger_lifecycles t.driver;
-      Bonsai_driver.flush t.driver;
-      render_current_result t
-
-    and schedule_event_and_render t event =
-      Effect.Expert.eval
-        event
-        ~on_exn:(fun exn -> Exn.reraise exn "Unhandled exception raised in effect")
-        ~f:(fun () -> flush_and_render t)
-    ;;
-
-    let view t = Option.map t.mounted ~f:R.view
+    let view t = Option.map (Bonsai_native.App_driver.rendered t) ~f:R.view
   end
 end
 

@@ -61,6 +61,25 @@ module Bridge : sig
   val dispatch_change : t -> int -> text:string -> unit
 end
 
+module App_driver : sig
+  type ('result, 'rendered) t
+
+  val create
+    :  ?optimize:bool
+    -> time_source:Bonsai.Time_source.t
+    -> (Bonsai.graph -> 'result Bonsai.t)
+    -> render:(schedule_event:(unit Effect.t -> unit) -> 'result -> 'rendered)
+    -> update:
+         ('rendered -> schedule_event:(unit Effect.t -> unit) -> 'result -> 'rendered)
+    -> ('result, 'rendered) t
+
+  val flush : ('result, 'rendered) t -> unit
+  val flush_and_render : ('result, 'rendered) t -> unit
+  val schedule_event : ('result, 'rendered) t -> unit Effect.t -> unit
+  val schedule_event_and_render : ('result, 'rendered) t -> unit Effect.t -> unit
+  val rendered : ('result, 'rendered) t -> 'rendered option
+end
+
 module App : sig
   type t
 
