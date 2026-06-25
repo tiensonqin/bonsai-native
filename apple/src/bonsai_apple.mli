@@ -248,7 +248,8 @@ val sidebar_action
   -> unit
   -> sidebar_action
 val sidebar_split
-  :  ?header_action:sidebar_action
+  :  ?title:string
+  -> ?header_action:sidebar_action
   -> ?actions:sidebar_action list
   -> ?bottom_search_placeholder:string
   -> ?bottom_search_text:string
@@ -323,6 +324,7 @@ val toolbar_item
   -> unit
   -> toolbar_item
 val toolbar : toolbar_item list -> node -> node
+val tap_action : on_click:unit Effect.t -> node -> node
 val alert_action
   :  ?role:alert_action_role
   -> ?is_enabled:bool
@@ -393,6 +395,7 @@ type modifier =
       ; on_change : string -> unit Effect.t
       }
   | Toolbar of toolbar_item list
+  | Tap_action of { on_click : unit Effect.t }
   | Sheet of
       { is_presented : bool
       ; content : node
@@ -419,6 +422,7 @@ type 'view rendered_modifier =
       ; on_change : string -> unit Effect.t
       }
   | Rendered_toolbar of toolbar_item list
+  | Rendered_tap_action of { on_click : unit Effect.t }
   | Rendered_sheet of
       { is_presented : bool
       ; content : 'view option
@@ -481,6 +485,7 @@ module Renderer : sig
       -> unit
     val set_sidebar_shell
       :  view
+      -> title:string option
       -> header_action:rendered_sidebar_action option
       -> actions:rendered_sidebar_action list
       -> bottom_search_placeholder:string option

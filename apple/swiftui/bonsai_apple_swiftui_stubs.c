@@ -42,6 +42,7 @@ extern void bonsai_native_swiftui_set_progress(void *node, double value);
 extern void bonsai_native_swiftui_set_spacing(void *node, double spacing);
 extern void bonsai_native_swiftui_set_children(void *node, void **children, int32_t count);
 extern void bonsai_native_swiftui_set_on_click(void *node, int32_t event_id);
+extern void bonsai_native_swiftui_set_tap_action(void *node, int32_t event_id);
 extern void bonsai_native_swiftui_set_on_change(void *node, int32_t event_id);
 extern void bonsai_native_swiftui_set_list_row_subtitle(void *node, const char *subtitle);
 extern void bonsai_native_swiftui_set_list_row_trailing_text(
@@ -152,6 +153,7 @@ extern void bonsai_native_swiftui_append_tab(
   int32_t role);
 extern void bonsai_native_swiftui_clear_sidebar_shell(
   void *node,
+  const char *title,
   const char *bottom_search_placeholder,
   const char *bottom_search_text,
   int32_t bottom_search_event_id);
@@ -531,6 +533,13 @@ CAMLprim value bonsai_apple_swiftui_set_on_click(value node, value event_id)
 {
   CAMLparam2(node, event_id);
   bonsai_native_swiftui_set_on_click(pointer_val(node), Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_tap_action(value node, value event_id)
+{
+  CAMLparam2(node, event_id);
+  bonsai_native_swiftui_set_tap_action(pointer_val(node), Int_val(event_id));
   CAMLreturn(Val_unit);
 }
 
@@ -940,13 +949,15 @@ CAMLprim value bonsai_apple_swiftui_append_tab(
 
 CAMLprim value bonsai_apple_swiftui_clear_sidebar_shell(
   value node,
+  value title,
   value bottom_search_placeholder,
   value bottom_search_text,
   value bottom_search_event_id)
 {
-  CAMLparam4(node, bottom_search_placeholder, bottom_search_text, bottom_search_event_id);
+  CAMLparam5(node, title, bottom_search_placeholder, bottom_search_text, bottom_search_event_id);
   bonsai_native_swiftui_clear_sidebar_shell(
     pointer_val(node),
+    Is_none(title) ? NULL : String_val(Some_val(title)),
     Is_none(bottom_search_placeholder) ? NULL : String_val(Some_val(bottom_search_placeholder)),
     String_val(bottom_search_text),
     Int_val(bottom_search_event_id));

@@ -291,7 +291,8 @@ type node =
       ; tabs : tab list
       }
   | Sidebar_split_node of
-      { selected : string
+      { title : string option
+      ; selected : string
       ; on_select : string -> unit Effect.t
       ; tabs : tab list
       ; header_action : sidebar_action option
@@ -369,6 +370,7 @@ and modifier =
       ; on_change : string -> unit Effect.t
       }
   | Toolbar of toolbar_item list
+  | Tap_action of { on_click : unit Effect.t }
   | Sheet of
       { is_presented : bool
       ; content : node
@@ -395,6 +397,7 @@ type 'view rendered_modifier =
       ; on_change : string -> unit Effect.t
       }
   | Rendered_toolbar of toolbar_item list
+  | Rendered_tap_action of { on_click : unit Effect.t }
   | Rendered_sheet of
       { is_presented : bool
       ; content : 'view option
@@ -523,6 +526,7 @@ let tab_view ~selected ~on_select (tabs : tab list) =
 ;;
 
 let sidebar_split
+  ?title
   ?(header_action : sidebar_action option)
   ?(actions = ([] : sidebar_action list))
   ?bottom_search_placeholder
@@ -544,7 +548,8 @@ let sidebar_split
     then failwithf "duplicate Bonsai Apple sidebar action id: %s" action.id ();
     Hash_set.add seen_actions action.id);
   Sidebar_split_node
-    { selected
+    { title
+    ; selected
     ; on_select
     ; tabs
     ; header_action
@@ -759,6 +764,7 @@ let toolbar_item
   { id; title; system_image; is_title_visible; is_enabled; on_click; menu_actions }
 ;;
 let toolbar items node = Modified_node (Toolbar items, node)
+let tap_action ~on_click node = Modified_node (Tap_action { on_click }, node)
 let alert_action ?(role = Alert_default) ?(is_enabled = true) ~id ~title ~on_click () =
   { id; title; role; is_enabled; on_click }
 ;;
@@ -862,6 +868,7 @@ module Renderer = struct
       -> unit
     val set_sidebar_shell
       :  view
+      -> title:string option
       -> header_action:rendered_sidebar_action option
       -> actions:rendered_sidebar_action list
       -> bottom_search_placeholder:string option
@@ -968,6 +975,7 @@ module Renderer = struct
                    , item.is_enabled
                    , List.length item.menu_actions ))
                  : (string * string * string option * bool * int) list) )]
+          | Tap_action _ -> [%sexp "tap-action"]
           | Sheet { is_presented; content; on_dismiss = _ } ->
             [%sexp "sheet", (is_presented : bool), (fingerprint content : string)]
           | Alert
@@ -1084,7 +1092,8 @@ module Renderer = struct
             , (List.map tabs ~f:(fun tab -> tab.id, tab.title, tab.system_image, tab.role, fingerprint tab.content)
                : (string * string * string option * tab_role option * string) list) )]
         | Sidebar_split_node
-            { selected
+            { title
+            ; selected
             ; tabs
             ; on_select = _
             ; header_action
@@ -1096,6 +1105,7 @@ module Renderer = struct
             } ->
           [%sexp
             ( "sidebar-tabs"
+            , (title : string option)
             , (selected : string)
             , (List.map tabs ~f:(fun tab -> tab.id, tab.title, tab.system_image, tab.role, fingerprint tab.content)
                : (string * string * string option * tab_role option * string) list)
@@ -1198,10 +1208,6 @@ module Renderer = struct
           (List.map children ~f:(fun child -> child.mounted.view))
       in
       let rendered_modifiers = reconcile_modifiers t modifiers in
-      Backend.set_modifiers
-        t.view
-        ~schedule_event:t.schedule_event
-        rendered_modifiers;
       (match node with
        | Text { text; attributes } ->
          Backend.set_text t.view text;
@@ -1287,7 +1293,8 @@ module Renderer = struct
          Backend.set_on_change t.view None;
          reconcile_tabs t ~selected ~on_select tabs
        | Sidebar_split_node
-           { selected
+           { title
+           ; selected
            ; on_select
            ; tabs
            ; header_action
@@ -1309,6 +1316,7 @@ module Renderer = struct
          in
          Backend.set_sidebar_shell
            t.view
+           ~title
            ~header_action:(Option.map header_action ~f:render_action)
            ~actions:(List.map actions ~f:render_action)
            ~bottom_search_placeholder
@@ -1439,7 +1447,11 @@ module Renderer = struct
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          replace_children []
-       | Modified_node _ -> assert false)
+       | Modified_node _ -> assert false);
+      Backend.set_modifiers
+        t.view
+        ~schedule_event:t.schedule_event
+        rendered_modifiers
 
     and rendered_list_row_callbacks
       t
@@ -1539,6 +1551,7 @@ module Renderer = struct
           | Navigation_title title -> Rendered_navigation_title title
           | Searchable { text; on_change } -> Rendered_searchable { text; on_change }
           | Toolbar items -> Rendered_toolbar items
+          | Tap_action { on_click } -> Rendered_tap_action { on_click }
           | Sheet { is_presented; content; on_dismiss } ->
             let content =
               if is_presented
@@ -1699,6 +1712,7 @@ module For_testing = struct
       ; mutable selected_tab : string option
       ; mutable on_select_tab : (string -> unit) option
       ; mutable tabs : rendered_tab list
+      ; mutable sidebar_title : string option
       ; mutable sidebar_header_action : rendered_sidebar_action option
       ; mutable sidebar_actions : rendered_sidebar_action list
       ; mutable sidebar_bottom_search_placeholder : string option
@@ -1772,6 +1786,7 @@ module For_testing = struct
       ; selected_tab = None
       ; on_select_tab = None
       ; tabs = []
+      ; sidebar_title = None
       ; sidebar_header_action = None
       ; sidebar_actions = []
       ; sidebar_bottom_search_placeholder = None
@@ -1872,6 +1887,7 @@ module For_testing = struct
 
     let set_sidebar_shell
       view
+      ~title
       ~header_action
       ~actions
       ~bottom_search_placeholder
@@ -1880,6 +1896,7 @@ module For_testing = struct
       ~bottom_action
       =
       mutate ();
+      view.sidebar_title <- title;
       view.sidebar_header_action <- header_action;
       view.sidebar_actions <- actions;
       view.sidebar_bottom_search_placeholder <- bottom_search_placeholder;
@@ -2020,7 +2037,14 @@ module For_testing = struct
     let set_modifiers view ~schedule_event modifiers =
       mutate ();
       view.modifiers <- modifiers;
-      view.schedule_event <- Some schedule_event
+      view.schedule_event <- Some schedule_event;
+      (match
+         List.find_map modifiers ~f:(function
+           | Rendered_tap_action { on_click } -> Some on_click
+           | _ -> None)
+       with
+       | None -> ()
+       | Some on_click -> view.on_click <- Some (fun () -> schedule_event on_click))
     ;;
 
     let kind_name = function
@@ -2059,6 +2083,7 @@ module For_testing = struct
       | Rendered_navigation_title _ -> "navigation-title"
       | Rendered_searchable _ -> "searchable"
       | Rendered_toolbar _ -> "toolbar"
+      | Rendered_tap_action _ -> "tap-action"
       | Rendered_sheet _ -> "sheet"
       | Rendered_alert _ -> "alert"
     ;;
@@ -2311,7 +2336,13 @@ module For_testing = struct
       in
       let compact_top_bar =
         match view.kind with
-        | Sidebar_split -> " compact-top-bar=chatgpt-like-menu header-button-chrome=plain-circle"
+        | Sidebar_split ->
+          let title = Option.value view.sidebar_title ~default:"Menu" in
+          " sidebar-drawer=full-screen sidebar-padding=12 sidebar-header-title="
+          ^ title
+          ^ " sidebar-primary-row-height=52 sidebar-selected-corner-radius=12"
+          ^ " sidebar-search-style=liquid-glass compact-top-bar=chatgpt-like-menu"
+          ^ " header-button-chrome=liquid-glass"
         | _ -> ""
       in
       let sidebar_action_name (action : rendered_sidebar_action) =

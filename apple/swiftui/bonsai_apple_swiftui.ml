@@ -118,6 +118,12 @@ external set_native_on_click
   -> unit
   = "bonsai_apple_swiftui_set_on_click"
 
+external set_native_tap_action
+  :  native
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_tap_action"
+
 external set_native_on_change
   :  native
   -> int
@@ -387,6 +393,7 @@ external append_native_tab
 external clear_native_sidebar_shell
   :  native
   -> string option
+  -> string option
   -> string
   -> int
   -> unit
@@ -530,6 +537,7 @@ module Backend = struct
   type view =
     { native : native
     ; mutable click_event_id : int option
+    ; mutable tap_event_id : int option
     ; mutable change_event_id : int option
     ; mutable search_event_id : int option
     ; mutable tab_select_event_id : int option
@@ -550,6 +558,7 @@ module Backend = struct
      | _ -> ());
     { native
     ; click_event_id = None
+    ; tap_event_id = None
     ; change_event_id = None
     ; search_event_id = None
     ; tab_select_event_id = None
@@ -566,6 +575,7 @@ module Backend = struct
 
   let destroy view =
     clear_handler view.click_event_id;
+    clear_handler view.tap_event_id;
     clear_handler view.change_event_id;
     clear_handler view.search_event_id;
     clear_handler view.tab_select_event_id;
@@ -691,6 +701,7 @@ module Backend = struct
 
   let set_sidebar_shell
     view
+    ~title
     ~(header_action : Apple.rendered_sidebar_action option)
     ~(actions : Apple.rendered_sidebar_action list)
     ~bottom_search_placeholder
@@ -720,6 +731,7 @@ module Backend = struct
     in
     clear_native_sidebar_shell
       view.native
+      title
       bottom_search_placeholder
       bottom_search_text
       bottom_search_event_id;
@@ -823,6 +835,18 @@ module Backend = struct
       let event_id = install_handler view.click_event_id (Click handler) in
       view.click_event_id <- Some event_id;
       set_native_on_click view.native event_id
+  ;;
+
+  let set_tap_action view handler =
+    match handler with
+    | None ->
+      clear_handler view.tap_event_id;
+      view.tap_event_id <- None;
+      set_native_tap_action view.native no_event
+    | Some handler ->
+      let event_id = install_handler view.tap_event_id (Click handler) in
+      view.tap_event_id <- Some event_id;
+      set_native_tap_action view.native event_id
   ;;
 
   let set_on_change view handler =
@@ -1101,6 +1125,7 @@ module Backend = struct
     let saw_regular_material_panel = ref false in
     let saw_frame = ref false in
     let saw_navigation_title = ref false in
+    let saw_tap_action = ref false in
     List.iter modifiers ~f:(function
       | Apple.Rendered_searchable { text; on_change } ->
         saw_searchable := true;
@@ -1147,7 +1172,10 @@ module Backend = struct
         set_native_navigation_title view.native (Some title)
       | Apple.Rendered_toolbar items ->
         saw_toolbar := true;
-        install_toolbar view ~schedule_event items);
+        install_toolbar view ~schedule_event items
+      | Apple.Rendered_tap_action { on_click } ->
+        saw_tap_action := true;
+        set_tap_action view (Some (fun () -> schedule_event on_click)));
     if not !saw_searchable then clear_searchable view;
     if not !saw_sheet then clear_sheet view;
     if not !saw_alert then clear_alert view;
@@ -1156,7 +1184,8 @@ module Backend = struct
     if not !saw_regular_material_panel
     then set_native_regular_material_panel view.native (-1.);
     if not !saw_frame then set_native_frame view.native (-1.) (-1.);
-    if not !saw_navigation_title then set_native_navigation_title view.native None
+    if not !saw_navigation_title then set_native_navigation_title view.native None;
+    if not !saw_tap_action then set_tap_action view None
   ;;
 end
 

@@ -78,6 +78,29 @@ private struct BonsaiHeaderIconChrome: ViewModifier {
     content
       .frame(width: 34, height: 34)
       .contentShape(Circle())
+      .bonsaiLiquidGlassPanel(cornerRadius: 17, isInteractive: true, isTransparent: true)
+  }
+}
+
+private extension View {
+  @ViewBuilder
+  func bonsaiLiquidGlassPanel(
+    cornerRadius: CGFloat,
+    isInteractive: Bool = false,
+    isTransparent: Bool = false
+  ) -> some View {
+    let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+    if #available(iOS 26.0, *) {
+      self.glassEffect(
+        isTransparent
+          ? (isInteractive ? .clear.interactive() : .clear)
+          : (isInteractive ? .regular.interactive() : .regular),
+        in: shape
+      )
+    } else {
+      self.background(isTransparent ? AnyShapeStyle(.clear) : AnyShapeStyle(.bar), in: shape)
+    }
   }
 }
 
@@ -172,6 +195,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var spacing: CGFloat?
   @Published var children: [BonsaiNativeNode] = []
   @Published var clickEventId: Int32?
+  @Published var tapEventId: Int32?
   @Published var changeEventId: Int32?
   @Published var isSearchable = false
   @Published var searchText = ""
@@ -196,6 +220,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var tabs: [BonsaiNativeTab] = []
   @Published var selectedTabId = ""
   @Published var tabSelectEventId: Int32?
+  @Published var sidebarTitle: String?
   @Published var sidebarHeaderAction: BonsaiNativeSidebarAction?
   @Published var sidebarActions: [BonsaiNativeSidebarAction] = []
   @Published var sidebarBottomSearchPlaceholder: String?
@@ -454,10 +479,12 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
   @ObservedObject var model: BonsaiNativeHostModel
 
   func body(content: Content) -> some View {
-    regularMaterialPanel(
-      content
-        .padding(node.padding ?? EdgeInsets())
-        .frame(width: node.frameWidth, height: node.frameHeight)
+    tapAction(
+      regularMaterialPanel(
+        content
+          .padding(node.padding ?? EdgeInsets())
+          .frame(width: node.frameWidth, height: node.frameHeight)
+      )
     )
       .modifier(BonsaiNativeSearchModifier(node: node, model: model))
       .modifier(BonsaiNativeNavigationTitleModifier(node: node))
@@ -522,6 +549,19 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
         .regularMaterial,
         in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
       )
+    } else {
+      content
+    }
+  }
+
+  @ViewBuilder
+  private func tapAction<TapContent: View>(_ content: TapContent) -> some View {
+    if let tapEventId = node.tapEventId {
+      content
+        .contentShape(.rect)
+        .onTapGesture {
+          model.sendClick(tapEventId)
+        }
     } else {
       content
     }
@@ -998,15 +1038,21 @@ private struct BonsaiNativeNodeView: View {
   }
 
   private var compactSidebarContent: some View {
-    VStack(alignment: .leading, spacing: 22) {
-      HStack(alignment: .center) {
+    VStack(alignment: .leading, spacing: 28) {
+      HStack(alignment: .center, spacing: 16) {
         Text(sidebarTitle)
-          .font(.title2.weight(.bold))
-        Spacer()
+          .font(.system(size: 28, weight: .bold))
+          .foregroundStyle(.primary)
+          .lineLimit(1)
+          .accessibilityAddTraits(.isHeader)
+
+        Spacer(minLength: 12)
+
         sidebarHeaderActionButton
       }
+      .padding(.horizontal, 12)
 
-      VStack(alignment: .leading, spacing: 8) {
+      VStack(alignment: .leading, spacing: 0) {
         sidebarRouteButtons
       }
 
@@ -1014,8 +1060,9 @@ private struct BonsaiNativeNodeView: View {
 
       sidebarBottomControls
     }
-    .padding(.top, 62)
-    .padding(.horizontal, 24)
+    .padding(.top, 54)
+    .padding(.bottom, 34)
+    .padding(.horizontal, 12)
     .frame(maxHeight: .infinity, alignment: .topLeading)
   }
 
@@ -1057,9 +1104,17 @@ private struct BonsaiNativeNodeView: View {
       return
     }
     let visibleWidth = compactSidebarVisibleWidth(revealWidth: revealWidth)
-    let shouldOpen =
-      value.predictedEndTranslation.width > 70
-      || visibleWidth > revealWidth * 0.35
+    let shouldOpen: Bool
+    if isCompactSidebarOpen {
+      let predictedCloseDistance = max(0, -value.predictedEndTranslation.width)
+      let currentCloseDistance = max(0, -compactSidebarDragOffset)
+      shouldOpen =
+        predictedCloseDistance < max(56, revealWidth * 0.18)
+        && currentCloseDistance < max(88, revealWidth * 0.28)
+    } else {
+      let predictedVisibleWidth = max(0, min(revealWidth, value.predictedEndTranslation.width))
+      shouldOpen = predictedVisibleWidth > revealWidth * 0.48 || visibleWidth > revealWidth * 0.55
+    }
     setCompactSidebarOpen(shouldOpen)
   }
 
@@ -1208,16 +1263,27 @@ private struct BonsaiNativeNodeView: View {
   }
 
   private func sidebarRowLabel(title: String, systemImage: String?, isSelected: Bool) -> some View {
-    Label(title, systemImage: systemImage ?? "circle")
-      .font(.body.weight(isSelected ? .semibold : .regular))
-      .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+    HStack(spacing: 12) {
+      Image(systemName: systemImage ?? "circle")
+        .font(.system(size: 18, weight: .semibold))
+        .foregroundStyle(.primary)
+        .frame(width: 24)
+
+      Text(title)
+        .font(.system(size: 16, weight: .semibold))
+        .foregroundStyle(.primary)
+        .lineLimit(1)
+    }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .frame(height: 52)
       .padding(.horizontal, 12)
       .background(
         isSelected
-          ? Color(uiColor: .tertiarySystemFill)
+          ? Color.primary.opacity(0.06)
           : Color.clear,
-        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
       )
+      .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
   }
 
   @ViewBuilder
@@ -1234,9 +1300,11 @@ private struct BonsaiNativeNodeView: View {
         Image(systemName: action.systemImage ?? "person.crop.circle")
           .font(.headline.weight(.semibold))
           .frame(width: 44, height: 44)
+          .contentShape(Circle())
       }
+      .frame(width: 44, height: 44)
       .buttonStyle(.plain)
-      .background(.thinMaterial, in: Circle())
+      .bonsaiLiquidGlassPanel(cornerRadius: 22, isInteractive: true, isTransparent: true)
       .accessibilityLabel(action.title)
     } else {
       Button {
@@ -1276,7 +1344,7 @@ private struct BonsaiNativeNodeView: View {
           .padding(.horizontal, 16)
           .frame(maxWidth: .infinity)
           .frame(height: 52)
-          .background(.thinMaterial, in: Capsule())
+          .bonsaiLiquidGlassPanel(cornerRadius: 26, isInteractive: true)
         }
 
         if let action = node.sidebarBottomAction {
@@ -1303,7 +1371,8 @@ private struct BonsaiNativeNodeView: View {
   }
 
   private var sidebarTitle: String {
-    Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+    node.sidebarTitle
+      ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
       ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
       ?? "Menu"
   }
@@ -2118,6 +2187,15 @@ public func bonsai_native_swiftui_set_on_click(
   node.clickEventId = eventId < 0 ? nil : eventId
 }
 
+@_cdecl("bonsai_native_swiftui_set_tap_action")
+public func bonsai_native_swiftui_set_tap_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.tapEventId = eventId < 0 ? nil : eventId
+}
+
 @_cdecl("bonsai_native_swiftui_set_on_change")
 public func bonsai_native_swiftui_set_on_change(
   _ pointer: UnsafeMutableRawPointer?,
@@ -2535,11 +2613,13 @@ public func bonsai_native_swiftui_append_tab(
 @_cdecl("bonsai_native_swiftui_clear_sidebar_shell")
 public func bonsai_native_swiftui_clear_sidebar_shell(
   _ pointer: UnsafeMutableRawPointer?,
+  _ titlePointer: UnsafePointer<CChar>?,
   _ bottomSearchPlaceholderPointer: UnsafePointer<CChar>?,
   _ bottomSearchTextPointer: UnsafePointer<CChar>?,
   _ bottomSearchEventId: Int32
 ) {
   guard let node = nativeNode(from: pointer) else { return }
+  node.sidebarTitle = titlePointer.map(String.init(cString:))
   node.sidebarHeaderAction = nil
   node.sidebarActions = []
   node.sidebarBottomSearchPlaceholder = bottomSearchPlaceholderPointer.map(String.init(cString:))

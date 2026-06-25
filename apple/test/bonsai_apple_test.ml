@@ -1278,7 +1278,7 @@ let%test_unit "sidebar split renders route metadata and schedules selection" =
   require_string_equal
     (show mounted)
     ~expect:
-      {|sidebar-split#1 selected=chat routes=[chat:Chat:bubble.left.and.bubble.right,decks:Decks:rectangle.stack] compact-top-bar=chatgpt-like-menu header-button-chrome=plain-circle sidebar-header-action=account:Account:person.crop.circle sidebar-actions=[practice-cards:Practice:rectangle.stack.badge.play] sidebar-bottom-search=Search text= sidebar-bottom-action=new-chat:Chat:square.and.pencil
+      {|sidebar-split#1 selected=chat routes=[chat:Chat:bubble.left.and.bubble.right,decks:Decks:rectangle.stack] sidebar-drawer=full-screen sidebar-padding=12 sidebar-header-title=Menu sidebar-primary-row-height=52 sidebar-selected-corner-radius=12 sidebar-search-style=liquid-glass compact-top-bar=chatgpt-like-menu header-button-chrome=liquid-glass sidebar-header-action=account:Account:person.crop.circle sidebar-actions=[practice-cards:Practice:rectangle.stack.badge.play] sidebar-bottom-search=Search text= sidebar-bottom-action=new-chat:Chat:square.and.pencil
   label#2 key=chat text="Chat detail"
   label#3 key=decks text="Deck detail"|};
   Backend.change_sidebar_bottom_search_exn (Renderer.view mounted) ~text:"math";
@@ -1325,7 +1325,7 @@ let%test_unit "sidebar split reuses keyed routes across reorder and text updates
   require_string_equal
     (show mounted)
     ~expect:
-      {|sidebar-split#1 selected=decks routes=[settings:Settings,decks:Decks,practice:Practice] compact-top-bar=chatgpt-like-menu header-button-chrome=plain-circle
+      {|sidebar-split#1 selected=decks routes=[settings:Settings,decks:Decks,practice:Practice] sidebar-drawer=full-screen sidebar-padding=12 sidebar-header-title=Menu sidebar-primary-row-height=52 sidebar-selected-corner-radius=12 sidebar-search-style=liquid-glass compact-top-bar=chatgpt-like-menu header-button-chrome=liquid-glass
   label#4 key=settings text="Settings detail"
   label#3 key=decks text="Updated deck detail"
   label#5 key=practice text="Practice detail"|};

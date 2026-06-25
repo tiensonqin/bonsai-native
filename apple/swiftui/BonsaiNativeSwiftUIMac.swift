@@ -97,6 +97,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var spacing: CGFloat?
   @Published var children: [BonsaiNativeNode] = []
   @Published var clickEventId: Int32?
+  @Published var tapEventId: Int32?
   @Published var changeEventId: Int32?
   @Published var isSearchable = false
   @Published var searchText = ""
@@ -120,6 +121,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var tabs: [BonsaiNativeTab] = []
   @Published var selectedTabId = ""
   @Published var tabSelectEventId: Int32?
+  @Published var sidebarTitle: String?
   @Published var sidebarHeaderAction: BonsaiNativeSidebarAction?
   @Published var sidebarActions: [BonsaiNativeSidebarAction] = []
   @Published var sidebarBottomSearchPlaceholder: String?
@@ -629,13 +631,15 @@ private struct BonsaiNativeNodeView: View {
 
   @ViewBuilder
   private func applyModifiers<Content: View>(to content: Content) -> some View {
-    let base = regularMaterialPanel(
-      content
-      .padding(node.padding ?? EdgeInsets())
-      .frame(
-        width: node.frameWidth,
-        height: node.frameHeight,
-        alignment: .topLeading
+    let base = tapAction(
+      regularMaterialPanel(
+        content
+        .padding(node.padding ?? EdgeInsets())
+        .frame(
+          width: node.frameWidth,
+          height: node.frameHeight,
+          alignment: .topLeading
+        )
       )
     )
       .modifier(BonsaiNativeNavigationTitleModifier(node: node))
@@ -712,6 +716,19 @@ private struct BonsaiNativeNodeView: View {
         .regularMaterial,
         in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
       )
+    } else {
+      content
+    }
+  }
+
+  @ViewBuilder
+  private func tapAction<TapContent: View>(_ content: TapContent) -> some View {
+    if let tapEventId = node.tapEventId {
+      content
+        .contentShape(.rect)
+        .onTapGesture {
+          model.sendClick(tapEventId)
+        }
     } else {
       content
     }
@@ -850,6 +867,11 @@ public func bonsai_native_swiftui_set_children(
 @_cdecl("bonsai_native_swiftui_set_on_click")
 public func bonsai_native_swiftui_set_on_click(_ pointer: UnsafeMutableRawPointer?, _ eventId: Int32) {
   nativeNode(from: pointer)?.clickEventId = eventId < 0 ? nil : eventId
+}
+
+@_cdecl("bonsai_native_swiftui_set_tap_action")
+public func bonsai_native_swiftui_set_tap_action(_ pointer: UnsafeMutableRawPointer?, _ eventId: Int32) {
+  nativeNode(from: pointer)?.tapEventId = eventId < 0 ? nil : eventId
 }
 
 @_cdecl("bonsai_native_swiftui_set_on_change")
@@ -1107,11 +1129,13 @@ public func bonsai_native_swiftui_append_tab(
 @_cdecl("bonsai_native_swiftui_clear_sidebar_shell")
 public func bonsai_native_swiftui_clear_sidebar_shell(
   _ pointer: UnsafeMutableRawPointer?,
+  _ titlePointer: UnsafePointer<CChar>?,
   _ bottomSearchPlaceholderPointer: UnsafePointer<CChar>?,
   _ bottomSearchTextPointer: UnsafePointer<CChar>?,
   _ bottomSearchEventId: Int32
 ) {
   guard let node = nativeNode(from: pointer) else { return }
+  node.sidebarTitle = titlePointer.map(String.init(cString:))
   node.sidebarHeaderAction = nil
   node.sidebarActions = []
   node.sidebarBottomSearchPlaceholder = bottomSearchPlaceholderPointer.map(String.init(cString:))
