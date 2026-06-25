@@ -1913,11 +1913,38 @@ module For_testing = struct
           let item_text =
             items
             |> List.map ~f:(fun (item : toolbar_item) ->
+              let system_image =
+                match item.system_image with
+                | None -> ""
+                | Some system_image -> ":image=" ^ system_image
+              in
+              let menu =
+                match item.menu_actions with
+                | [] -> ""
+                | menu_actions ->
+                  let action_text =
+                    menu_actions
+                    |> List.map ~f:(fun (action : toolbar_menu_action) ->
+                      let system_image =
+                        Option.value action.system_image ~default:"none"
+                      in
+                      let style =
+                        match action.style with
+                        | Default -> "default"
+                        | Destructive -> "destructive"
+                      in
+                      action.title ^ ":" ^ system_image ^ ":" ^ style)
+                    |> String.concat ~sep:","
+                  in
+                  ":menu=[" ^ action_text ^ "]"
+              in
               sprintf
-                "%s:%s:%s"
+                "%s:%s:%s%s%s"
                 item.id
                 item.title
-                (if item.is_enabled then "enabled" else "disabled"))
+                (if item.is_enabled then "enabled" else "disabled")
+                system_image
+                menu)
             |> String.concat ~sep:","
           in
           " toolbar=[" ^ item_text ^ "]"

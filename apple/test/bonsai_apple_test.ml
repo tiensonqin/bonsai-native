@@ -747,6 +747,7 @@ let%test_unit "toolbar menu file export is visible to the testing backend" =
   let root = Renderer.view mounted in
   Backend.click_toolbar_menu_action_exn root ~path:[] ~id:"share" ~title:"Anki text";
   let rendered = Backend.show root in
+  require_string_contains rendered {|toolbar=[share:Share:enabled:image=square.and.arrow.up:menu=[Anki text:doc.plaintext:default]]|};
   require_string_contains rendered {|filename=Biology.txt content_type=public.plain-text|}
 ;;
 
