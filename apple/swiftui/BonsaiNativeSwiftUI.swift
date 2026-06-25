@@ -70,6 +70,10 @@ private enum NodeKind: Int32 {
 
 private let bonsaiLightBackgroundComponent: CGFloat = 0.965
 
+private extension EnvironmentValues {
+  @Entry var bonsaiSuppressNativeToolbar = false
+}
+
 private var bonsaiHomeBodyBackground: Color {
   Color(uiColor: UIColor { traits in
     if traits.userInterfaceStyle == .dark {
@@ -528,7 +532,13 @@ private struct BonsaiNativeNavigationTitleModifier: ViewModifier {
   @ViewBuilder
   func body(content: Content) -> some View {
     if let title = node.navigationTitle {
-      content.navigationTitle(title)
+      content
+        .navigationTitle(title)
+#if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.clear, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+#endif
     } else {
       content
     }
@@ -807,6 +817,7 @@ private struct BonsaiNativeShareLinkView: View {
 
 private struct BonsaiNativeNodeView: View {
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+  @Environment(\.bonsaiSuppressNativeToolbar) private var suppressNativeToolbar
   @ObservedObject var node: BonsaiNativeNode
   @ObservedObject var model: BonsaiNativeHostModel
   @State private var isCompactSidebarOpen = false
@@ -1372,6 +1383,7 @@ private struct BonsaiNativeNodeView: View {
             selectedRouteDetail
               .frame(maxWidth: .infinity, maxHeight: .infinity)
               .padding(.top, 48)
+              .environment(\.bonsaiSuppressNativeToolbar, true)
 
             compactSidebarTopBar
               .offset(y: -12)
@@ -1887,7 +1899,50 @@ private struct BonsaiNativeNodeView: View {
   }
 
   private func applyModifiers<Content: View>(to content: Content) -> some View {
-    content.modifier(BonsaiNativeNodeModifiers(node: node, model: model))
+    content
+      .modifier(BonsaiNativeNodeModifiers(node: node, model: model))
+      .toolbar {
+        if !suppressNativeToolbar {
+          nativeToolbarItems
+        }
+      }
+  }
+
+  @ToolbarContentBuilder
+  private var nativeToolbarItems: some ToolbarContent {
+    ToolbarItemGroup(placement: .automatic) {
+      ForEach(node.toolbarItems) { item in
+        if item.menuActions.isEmpty {
+          Button {
+            if let eventId = item.eventId {
+              model.sendClick(eventId)
+            }
+          } label: {
+            toolbarItemLabel(item)
+          }
+          .buttonStyle(.plain)
+          .disabled(!item.isEnabled)
+        } else {
+          Menu {
+            ForEach(item.menuActions) { action in
+              Button(role: action.style == 1 ? .destructive : nil) {
+                handleToolbarMenuAction(action)
+              } label: {
+                if let systemImage = action.systemImage {
+                  Label(action.title, systemImage: systemImage)
+                } else {
+                  Text(action.title)
+                }
+              }
+            }
+          } label: {
+            toolbarItemLabel(item)
+          }
+          .buttonStyle(.plain)
+          .disabled(!item.isEnabled)
+        }
+      }
+    }
   }
 }
 
