@@ -205,6 +205,7 @@ let%test_unit "list row renders generic metadata and schedules actions" =
          ; subtitle = Some "12:30 PM"
          ; trailing_text = None
          ; leading_system_image = Some "envelope"
+         ; preview_image_path = Some "/tmp/card.png"
          ; content_style = Apple.Standard
          ; accessory = Apple.No_accessory
          ; title_strikethrough = false
@@ -236,7 +237,7 @@ let%test_unit "list row renders generic metadata and schedules actions" =
   require_string_equal
     (show mounted)
     ~expect:
-      {|list-row#1 title="Reply to client email" subtitle=("12:30 PM") trailing=() style=Standard accessory=No_accessory strikethrough=false leading-image=envelope leading=circle:false actions=[Delete:destructive] menu=[Open:default]|};
+      {|list-row#1 title="Reply to client email" subtitle=("12:30 PM") trailing=() style=Standard accessory=No_accessory strikethrough=false leading-image=envelope preview-image=/tmp/card.png leading=circle:false actions=[Delete:destructive] menu=[Open:default]|};
   Backend.click_exn (Renderer.view mounted) ~path:[];
   Backend.click_row_leading_exn (Renderer.view mounted) ~path:[];
   Backend.click_row_action_exn (Renderer.view mounted) ~path:[] ~title:"Delete";
@@ -297,6 +298,7 @@ let%test_unit "sections and pickers render native list form controls" =
                  ; subtitle = Some "12 cards"
                  ; trailing_text = Some "3 due"
                  ; leading_system_image = None
+                 ; preview_image_path = None
                  ; content_style = Apple.Standard
                  ; accessory = Apple.No_accessory
                  ; title_strikethrough = false
@@ -317,7 +319,7 @@ let%test_unit "sections and pickers render native list form controls" =
   section#2 key=Sort title=Sort
     picker#3 title="Sort decks" selected=due options=[default:Default,name:Name,due:Due]
   section#4 key=Decks
-    list-row#5 title=Biology subtitle=("12 cards") trailing=("3 due") style=Standard accessory=No_accessory strikethrough=false leading-image=none leading=none actions=[] menu=[]|};
+    list-row#5 title=Biology subtitle=("12 cards") trailing=("3 due") style=Standard accessory=No_accessory strikethrough=false leading-image=none preview-image=none leading=none actions=[] menu=[]|};
   Backend.select_picker_exn (Renderer.view mounted) ~path:[ 0; 0 ] ~id:"name";
   [%test_result: int] !scheduled ~expect:1;
   [%test_result: string list] !selections ~expect:[ "name" ]
@@ -500,6 +502,7 @@ let%test_unit "large keyed list updates do not rebuild unchanged rows" =
           ; subtitle = None
           ; trailing_text = None
           ; leading_system_image = None
+          ; preview_image_path = None
           ; content_style = Apple.Standard
           ; accessory = Apple.No_accessory
           ; title_strikethrough = false
@@ -610,6 +613,7 @@ let%test_unit "modifier events are scheduled through Bonsai effects" =
                     ; system_image = Some "icloud.and.arrow.down"
                     ; style = Apple.Default
                     ; on_click = noop
+                    ; file_export = None
                     }
                   ]
                 ~on_click:noop
@@ -719,6 +723,7 @@ let%test_unit "testing backend can change sheet text on an unselected sidebar ro
                 ; subtitle = None
                 ; trailing_text = None
                 ; leading_system_image = None
+                ; preview_image_path = None
                 ; content_style = Apple.Standard
                 ; accessory = Apple.No_accessory
                 ; title_strikethrough = false

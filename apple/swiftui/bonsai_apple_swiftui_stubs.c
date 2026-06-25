@@ -52,6 +52,9 @@ extern void bonsai_native_swiftui_set_list_row_title_strikethrough(
 extern void bonsai_native_swiftui_set_list_row_leading_system_image(
   void *node,
   const char *system_image);
+extern void bonsai_native_swiftui_set_list_row_preview_image_path(
+  void *node,
+  const char *image_path);
 extern void bonsai_native_swiftui_set_list_row_leading(
   void *node,
   const char *system_image,
@@ -94,7 +97,10 @@ extern void bonsai_native_swiftui_append_toolbar_menu_action(
   const char *title,
   const char *system_image,
   int32_t style,
-  int32_t event_id);
+  int32_t event_id,
+  const char *export_filename,
+  const char *export_content_type,
+  const char *export_content);
 extern void bonsai_native_swiftui_set_padding(
   void *node,
   double top,
@@ -504,6 +510,17 @@ CAMLprim value bonsai_apple_swiftui_set_list_row_leading_system_image(
   CAMLreturn(Val_unit);
 }
 
+CAMLprim value bonsai_apple_swiftui_set_list_row_preview_image_path(
+  value node,
+  value image_path)
+{
+  CAMLparam2(node, image_path);
+  bonsai_native_swiftui_set_list_row_preview_image_path(
+    pointer_val(node),
+    Is_none(image_path) ? NULL : String_val(Some_val(image_path)));
+  CAMLreturn(Val_unit);
+}
+
 CAMLprim value bonsai_apple_swiftui_set_list_row_leading(
   value node,
   value system_image,
@@ -642,18 +659,41 @@ CAMLprim value bonsai_apple_swiftui_append_toolbar_menu_action(
   value title,
   value system_image,
   value style,
-  value event_id)
+  value event_id,
+  value export_filename,
+  value export_content_type,
+  value export_content)
 {
   CAMLparam5(node, item_id, title, system_image, style);
-  CAMLxparam1(event_id);
+  CAMLxparam4(event_id, export_filename, export_content_type, export_content);
   bonsai_native_swiftui_append_toolbar_menu_action(
     pointer_val(node),
     String_val(item_id),
     String_val(title),
     option_string_val(system_image),
     Int_val(style),
-    Int_val(event_id));
+    Int_val(event_id),
+    option_string_val(export_filename),
+    option_string_val(export_content_type),
+    option_string_val(export_content));
   CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_append_toolbar_menu_action_bytecode(
+  value *argv,
+  int argn)
+{
+  (void)argn;
+  return bonsai_apple_swiftui_append_toolbar_menu_action(
+    argv[0],
+    argv[1],
+    argv[2],
+    argv[3],
+    argv[4],
+    argv[5],
+    argv[6],
+    argv[7],
+    argv[8]);
 }
 
 CAMLprim value bonsai_apple_swiftui_set_padding(

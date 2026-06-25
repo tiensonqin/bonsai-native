@@ -111,6 +111,12 @@ external set_native_list_row_leading_system_image
   -> unit
   = "bonsai_apple_swiftui_set_list_row_leading_system_image"
 
+external set_native_list_row_preview_image_path
+  :  native
+  -> string option
+  -> unit
+  = "bonsai_apple_swiftui_set_list_row_preview_image_path"
+
 external set_native_list_row_leading
   :  native
   -> string option
@@ -242,6 +248,9 @@ external append_native_toolbar_menu_action
   -> string option
   -> int
   -> int
+  -> string option
+  -> string option
+  -> string option
   -> unit
   = "bonsai_apple_swiftui_append_toolbar_menu_action_bytecode"
     "bonsai_apple_swiftui_append_toolbar_menu_action"
@@ -760,6 +769,7 @@ module Backend = struct
     ~subtitle
     ~trailing_text
     ~leading_system_image
+    ~preview_image_path
     ~content_style
     ~accessory
     ~title_strikethrough
@@ -776,6 +786,7 @@ module Backend = struct
       (list_row_content_style_id content_style);
     set_native_list_row_accessory view.native (list_row_accessory_id accessory);
     set_native_list_row_leading_system_image view.native leading_system_image;
+    set_native_list_row_preview_image_path view.native preview_image_path;
     set_native_list_row_title_strikethrough view.native title_strikethrough;
     (match leading_button with
      | None ->
@@ -860,7 +871,10 @@ module Backend = struct
           action.title
           action.system_image
           (style_id action.style)
-          event_id))
+          event_id
+          (Option.map action.file_export ~f:(fun export -> export.filename))
+          (Option.map action.file_export ~f:(fun export -> export.content_type))
+          (Option.map action.file_export ~f:(fun export -> export.content))))
   ;;
 
   let clear_toolbar view =

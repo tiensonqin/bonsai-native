@@ -21,11 +21,18 @@ type row_action_style =
   | Destructive
 [@@deriving sexp_of]
 
+type file_export =
+  { filename : string
+  ; content_type : string
+  ; content : string
+  }
+
 type toolbar_menu_action =
   { title : string
   ; system_image : string option
   ; style : row_action_style
   ; on_click : unit Effect.t
+  ; file_export : file_export option
   }
 
 type toolbar_item =
@@ -105,12 +112,6 @@ type picker_option =
   ; title : string
   }
 
-type file_export =
-  { filename : string
-  ; content_type : string
-  ; content : string
-  }
-
 type image_payload =
   { id : string
   ; local_path : string
@@ -128,6 +129,7 @@ type list_row =
   ; subtitle : string option
   ; trailing_text : string option
   ; leading_system_image : string option
+  ; preview_image_path : string option
   ; content_style : list_row_content_style
   ; accessory : list_row_accessory
   ; title_strikethrough : bool
@@ -390,6 +392,7 @@ module Renderer : sig
       -> subtitle:string option
       -> trailing_text:string option
       -> leading_system_image:string option
+      -> preview_image_path:string option
       -> content_style:list_row_content_style
       -> accessory:list_row_accessory
       -> title_strikethrough:bool

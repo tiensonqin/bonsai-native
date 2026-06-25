@@ -21,11 +21,19 @@ type row_action_style =
   | Destructive
 [@@deriving sexp_of, equal]
 
+type file_export =
+  { filename : string
+  ; content_type : string
+  ; content : string
+  }
+[@@deriving sexp_of, equal]
+
 type toolbar_menu_action =
   { title : string
   ; system_image : string option
   ; style : row_action_style
   ; on_click : unit Effect.t
+  ; file_export : file_export option
   }
 
 type toolbar_item =
@@ -113,13 +121,6 @@ type picker_option =
   }
 [@@deriving sexp_of, equal]
 
-type file_export =
-  { filename : string
-  ; content_type : string
-  ; content : string
-  }
-[@@deriving sexp_of, equal]
-
 type image_payload =
   { id : string
   ; local_path : string
@@ -137,6 +138,7 @@ type list_row =
   ; subtitle : string option
   ; trailing_text : string option
   ; leading_system_image : string option
+  ; preview_image_path : string option
   ; content_style : list_row_content_style
   ; accessory : list_row_accessory
   ; title_strikethrough : bool
@@ -696,6 +698,7 @@ module Renderer = struct
       -> subtitle:string option
       -> trailing_text:string option
       -> leading_system_image:string option
+      -> preview_image_path:string option
       -> content_style:list_row_content_style
       -> accessory:list_row_accessory
       -> title_strikethrough:bool
@@ -1067,6 +1070,7 @@ module Renderer = struct
            ; subtitle
            ; trailing_text
            ; leading_system_image
+           ; preview_image_path
            ; content_style
            ; accessory
            ; title_strikethrough
@@ -1081,6 +1085,7 @@ module Renderer = struct
            ~subtitle
            ~trailing_text
            ~leading_system_image
+           ~preview_image_path
            ~content_style
            ~accessory
            ~title_strikethrough
@@ -1567,6 +1572,7 @@ module For_testing = struct
       ~subtitle
       ~trailing_text
       ~leading_system_image
+      ~preview_image_path
       ~content_style
       ~accessory
       ~title_strikethrough
@@ -1612,7 +1618,7 @@ module For_testing = struct
       view.list_row
       <- Some
            (sprintf
-              " title=%s subtitle=%s trailing=%s style=%s accessory=%s strikethrough=%s leading-image=%s %s actions=[%s] menu=[%s]"
+              " title=%s subtitle=%s trailing=%s style=%s accessory=%s strikethrough=%s leading-image=%s preview-image=%s %s actions=[%s] menu=[%s]"
               (Sexp.to_string_hum ([%sexp_of: string] title))
               (Sexp.to_string_hum ([%sexp_of: string option] subtitle))
               (Sexp.to_string_hum ([%sexp_of: string option] trailing_text))
@@ -1620,6 +1626,7 @@ module For_testing = struct
               (Sexp.to_string_hum ([%sexp_of: list_row_accessory] accessory))
               (Bool.to_string title_strikethrough)
               (Option.value leading_system_image ~default:"none")
+              (Option.value preview_image_path ~default:"none")
               leading
               actions
               menu_actions_text)

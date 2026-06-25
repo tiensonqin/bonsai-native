@@ -85,6 +85,9 @@ private struct BonsaiNativeRowAction: Identifiable {
   let systemImage: String?
   let style: Int32
   let eventId: Int32?
+  let exportFilename: String?
+  let exportContentType: String?
+  let exportContent: String?
 }
 
 private struct BonsaiNativeTab: Identifiable {
@@ -107,6 +110,28 @@ private struct BonsaiNativeToolbarItem: Identifiable {
   let systemImage: String?
   let eventId: Int32?
   var menuActions: [BonsaiNativeRowAction]
+}
+
+private struct BonsaiNativeExportDocument: FileDocument {
+  static var readableContentTypes: [UTType] { [.plainText, .data] }
+
+  var content: String
+
+  init(content: String = "") {
+    self.content = content
+  }
+
+  init(configuration: ReadConfiguration) throws {
+    if let data = configuration.file.regularFileContents {
+      content = String(decoding: data, as: UTF8.self)
+    } else {
+      content = ""
+    }
+  }
+
+  func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+    FileWrapper(regularFileWithContents: Data(content.utf8))
+  }
 }
 
 private struct BonsaiNativePickerOption: Identifiable {
@@ -154,6 +179,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var rowAccessory: Int32 = 0
   @Published var rowTitleStrikethrough = false
   @Published var rowStaticLeadingSystemImage: String?
+  @Published var rowPreviewImagePath: String?
   @Published var rowLeadingSystemImage: String?
   @Published var rowLeadingSelectedSystemImage: String?
   @Published var rowLeadingSelected = false
@@ -435,6 +461,10 @@ private struct BonsaiNativeNodeView: View {
   @State private var isCompactSidebarOpen = false
   @State private var compactSidebarDragOffset: CGFloat = 0
   @State private var compactSidebarDragAxis: DragAxis?
+  @State private var toolbarExportFilename = "Export.txt"
+  @State private var toolbarExportContentType = "public.plain-text"
+  @State private var toolbarExportContent = ""
+  @State private var isToolbarExportPresented = false
 
   private enum DragAxis {
     case horizontal
@@ -443,6 +473,12 @@ private struct BonsaiNativeNodeView: View {
 
   var body: some View {
     applyModifiers(to: base)
+      .fileExporter(
+        isPresented: $isToolbarExportPresented,
+        document: BonsaiNativeExportDocument(content: toolbarExportContent),
+        contentType: toolbarExportUTType,
+        defaultFilename: toolbarExportFilename
+      ) { _ in }
   }
 
   @ViewBuilder
@@ -869,7 +905,7 @@ private struct BonsaiNativeNodeView: View {
           Menu {
             ForEach(item.menuActions) { action in
               Button(role: action.style == 1 ? .destructive : nil) {
-                model.sendClick(action.eventId)
+                handleToolbarMenuAction(action)
               } label: {
                 if let systemImage = action.systemImage {
                   Label(action.title, systemImage: systemImage)
@@ -900,6 +936,22 @@ private struct BonsaiNativeNodeView: View {
           .modifier(BonsaiHeaderIconChrome())
       }
     }
+  }
+
+  private var toolbarExportUTType: UTType {
+    UTType(toolbarExportContentType) ?? .plainText
+  }
+
+  private func handleToolbarMenuAction(_ action: BonsaiNativeRowAction) {
+    if let filename = action.exportFilename,
+       let contentType = action.exportContentType,
+       let content = action.exportContent {
+      toolbarExportFilename = filename
+      toolbarExportContentType = contentType
+      toolbarExportContent = content
+      isToolbarExportPresented = true
+    }
+    model.sendClick(action.eventId)
   }
 
   @ViewBuilder
@@ -1287,6 +1339,7 @@ private struct BonsaiNativeListRowView: View {
 
   private var cardPreviewRowMainContent: some View {
     VStack(alignment: .leading, spacing: 6) {
+      rowPreviewImage(maxHeight: 160)
       Text(node.text)
         .font(.headline)
         .foregroundStyle(node.rowTitleStrikethrough ? .secondary : .primary)
@@ -1298,6 +1351,20 @@ private struct BonsaiNativeListRowView: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  @ViewBuilder
+  private func rowPreviewImage(maxHeight: CGFloat) -> some View {
+    if let path = node.rowPreviewImagePath,
+       !path.hasPrefix("r2://"),
+       FileManager.default.fileExists(atPath: path),
+       let image = UIImage(contentsOfFile: path) {
+      Image(uiImage: image)
+        .resizable()
+        .scaledToFit()
+        .frame(maxWidth: .infinity, maxHeight: maxHeight, alignment: .leading)
+        .clipShape(.rect(cornerRadius: 8, style: .continuous))
+    }
   }
 
   private var standardRowMainContent: some View {
@@ -1826,6 +1893,15 @@ public func bonsai_native_swiftui_set_list_row_leading_system_image(
   node.rowStaticLeadingSystemImage = systemImagePointer.map(String.init(cString:))
 }
 
+@_cdecl("bonsai_native_swiftui_set_list_row_preview_image_path")
+public func bonsai_native_swiftui_set_list_row_preview_image_path(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ imagePathPointer: UnsafePointer<CChar>?
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.rowPreviewImagePath = imagePathPointer.map(String.init(cString:))
+}
+
 @_cdecl("bonsai_native_swiftui_set_list_row_leading")
 public func bonsai_native_swiftui_set_list_row_leading(
   _ pointer: UnsafeMutableRawPointer?,
@@ -1940,7 +2016,10 @@ public func bonsai_native_swiftui_append_list_row_action(
       title: String(cString: titlePointer),
       systemImage: systemImagePointer.map(String.init(cString:)),
       style: style,
-      eventId: eventId < 0 ? nil : eventId
+      eventId: eventId < 0 ? nil : eventId,
+      exportFilename: nil,
+      exportContentType: nil,
+      exportContent: nil
     )
   )
 }
@@ -1965,7 +2044,10 @@ public func bonsai_native_swiftui_append_list_row_menu_action(
       title: String(cString: titlePointer),
       systemImage: systemImagePointer.map(String.init(cString:)),
       style: style,
-      eventId: eventId < 0 ? nil : eventId
+      eventId: eventId < 0 ? nil : eventId,
+      exportFilename: nil,
+      exportContentType: nil,
+      exportContent: nil
     )
   )
 }
@@ -2030,7 +2112,10 @@ public func bonsai_native_swiftui_append_toolbar_menu_action(
   _ titlePointer: UnsafePointer<CChar>?,
   _ systemImagePointer: UnsafePointer<CChar>?,
   _ style: Int32,
-  _ eventId: Int32
+  _ eventId: Int32,
+  _ exportFilenamePointer: UnsafePointer<CChar>?,
+  _ exportContentTypePointer: UnsafePointer<CChar>?,
+  _ exportContentPointer: UnsafePointer<CChar>?
 ) {
   guard let node = nativeNode(from: pointer),
         let itemIdPointer,
@@ -2042,7 +2127,10 @@ public func bonsai_native_swiftui_append_toolbar_menu_action(
       title: String(cString: titlePointer),
       systemImage: systemImagePointer.map(String.init(cString:)),
       style: style,
-      eventId: eventId < 0 ? nil : eventId
+      eventId: eventId < 0 ? nil : eventId,
+      exportFilename: exportFilenamePointer.map(String.init(cString:)),
+      exportContentType: exportContentTypePointer.map(String.init(cString:)),
+      exportContent: exportContentPointer.map(String.init(cString:))
     )
   )
 }

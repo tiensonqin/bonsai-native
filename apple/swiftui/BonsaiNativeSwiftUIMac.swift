@@ -40,6 +40,9 @@ private struct BonsaiNativeRowAction: Identifiable {
   let systemImage: String?
   let style: Int32
   let eventId: Int32?
+  let exportFilename: String?
+  let exportContentType: String?
+  let exportContent: String?
 }
 
 private struct BonsaiNativeTab: Identifiable {
@@ -100,6 +103,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var rowAccessory: Int32 = 0
   @Published var rowTitleStrikethrough = false
   @Published var rowStaticLeadingSystemImage: String?
+  @Published var rowPreviewImagePath: String?
   @Published var rowLeadingSystemImage: String?
   @Published var rowLeadingSelectedSystemImage: String?
   @Published var rowLeadingSelected = false
@@ -650,6 +654,11 @@ public func bonsai_native_swiftui_set_list_row_leading_system_image(_ pointer: U
   nativeNode(from: pointer)?.rowStaticLeadingSystemImage = systemImagePointer.map(String.init(cString:))
 }
 
+@_cdecl("bonsai_native_swiftui_set_list_row_preview_image_path")
+public func bonsai_native_swiftui_set_list_row_preview_image_path(_ pointer: UnsafeMutableRawPointer?, _ imagePathPointer: UnsafePointer<CChar>?) {
+  nativeNode(from: pointer)?.rowPreviewImagePath = imagePathPointer.map(String.init(cString:))
+}
+
 @_cdecl("bonsai_native_swiftui_set_list_row_leading")
 public func bonsai_native_swiftui_set_list_row_leading(
   _ pointer: UnsafeMutableRawPointer?,
@@ -692,7 +701,10 @@ public func bonsai_native_swiftui_append_list_row_action(
       title: String(cString: titlePointer),
       systemImage: systemImagePointer.map(String.init(cString:)),
       style: style,
-      eventId: eventId < 0 ? nil : eventId
+      eventId: eventId < 0 ? nil : eventId,
+      exportFilename: nil,
+      exportContentType: nil,
+      exportContent: nil
     )
   )
 }
@@ -716,7 +728,10 @@ public func bonsai_native_swiftui_append_list_row_menu_action(
       title: String(cString: titlePointer),
       systemImage: systemImagePointer.map(String.init(cString:)),
       style: style,
-      eventId: eventId < 0 ? nil : eventId
+      eventId: eventId < 0 ? nil : eventId,
+      exportFilename: nil,
+      exportContentType: nil,
+      exportContent: nil
     )
   )
 }
