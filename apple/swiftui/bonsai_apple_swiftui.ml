@@ -45,6 +45,12 @@ external set_native_placeholder
   -> unit
   = "bonsai_apple_swiftui_set_placeholder"
 
+external set_native_text_field_style
+  :  native
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_text_field_style"
+
 external set_native_spacing
   :  native
   -> float option
@@ -81,11 +87,29 @@ external set_native_list_row_trailing_text
   -> unit
   = "bonsai_apple_swiftui_set_list_row_trailing_text"
 
+external set_native_list_row_content_style
+  :  native
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_list_row_content_style"
+
+external set_native_list_row_accessory
+  :  native
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_list_row_accessory"
+
 external set_native_list_row_title_strikethrough
   :  native
   -> bool
   -> unit
   = "bonsai_apple_swiftui_set_list_row_title_strikethrough"
+
+external set_native_list_row_leading_system_image
+  :  native
+  -> string option
+  -> unit
+  = "bonsai_apple_swiftui_set_list_row_leading_system_image"
 
 external set_native_list_row_leading
   :  native
@@ -163,6 +187,20 @@ external append_native_list_row_action
   -> unit
   = "bonsai_apple_swiftui_append_list_row_action"
 
+external clear_native_list_row_menu_actions
+  :  native
+  -> unit
+  = "bonsai_apple_swiftui_clear_list_row_menu_actions"
+
+external append_native_list_row_menu_action
+  :  native
+  -> string
+  -> string option
+  -> int
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_append_list_row_menu_action"
+
 external set_native_searchable
   :  native
   -> int
@@ -182,6 +220,31 @@ external set_native_sheet
   -> int
   -> unit
   = "bonsai_apple_swiftui_set_sheet"
+
+external clear_native_toolbar
+  :  native
+  -> unit
+  = "bonsai_apple_swiftui_clear_toolbar"
+
+external append_native_toolbar_item
+  :  native
+  -> string
+  -> string
+  -> string option
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_append_toolbar_item"
+
+external append_native_toolbar_menu_action
+  :  native
+  -> string
+  -> string
+  -> string option
+  -> int
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_append_toolbar_menu_action_bytecode"
+    "bonsai_apple_swiftui_append_toolbar_menu_action"
 
 external set_native_padding
   :  native
@@ -214,6 +277,41 @@ external append_native_tab
   -> int
   -> unit
   = "bonsai_apple_swiftui_append_tab"
+
+external clear_native_sidebar_shell
+  :  native
+  -> string option
+  -> string
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_clear_sidebar_shell"
+
+external set_native_sidebar_header_action
+  :  native
+  -> string option
+  -> string option
+  -> string option
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_sidebar_header_action"
+
+external append_native_sidebar_action
+  :  native
+  -> string
+  -> string
+  -> string option
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_append_sidebar_action"
+
+external set_native_sidebar_bottom_action
+  :  native
+  -> string option
+  -> string option
+  -> string option
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_sidebar_bottom_action"
 
 external make_native_controller
   :  native
@@ -326,8 +424,11 @@ module Backend = struct
     ; mutable search_event_id : int option
     ; mutable tab_select_event_id : int option
     ; mutable sheet_dismiss_event_id : int option
+    ; mutable toolbar_event_ids : int list
     ; mutable picker_select_event_id : int option
     ; mutable row_event_ids : int list
+    ; mutable sidebar_event_ids : int list
+    ; mutable sidebar_search_event_id : int option
     ; mutable controller : controller option
     }
 
@@ -342,8 +443,11 @@ module Backend = struct
     ; search_event_id = None
     ; tab_select_event_id = None
     ; sheet_dismiss_event_id = None
+    ; toolbar_event_ids = []
     ; picker_select_event_id = None
     ; row_event_ids = []
+    ; sidebar_event_ids = []
+    ; sidebar_search_event_id = None
     ; controller = None
     }
   ;;
@@ -354,8 +458,11 @@ module Backend = struct
     clear_handler view.search_event_id;
     clear_handler view.tab_select_event_id;
     clear_handler view.sheet_dismiss_event_id;
+    List.iter view.toolbar_event_ids ~f:(fun event_id -> clear_handler (Some event_id));
     clear_handler view.picker_select_event_id;
+    clear_handler view.sidebar_search_event_id;
     List.iter view.row_event_ids ~f:(Hashtbl.remove event_handlers);
+    List.iter view.sidebar_event_ids ~f:(Hashtbl.remove event_handlers);
     Option.iter view.controller ~f:release_controller;
     view.controller <- None;
     release_node view.native
@@ -399,6 +506,16 @@ module Backend = struct
   ;;
 
   let set_placeholder view placeholder = set_native_placeholder view.native placeholder
+
+  let text_field_style_id = function
+    | Apple.Rounded_border -> 0
+    | Apple.Pill -> 1
+  ;;
+
+  let set_text_field_style view style =
+    set_native_text_field_style view.native (text_field_style_id style)
+  ;;
+
   let set_spacing view spacing = set_native_spacing view.native spacing
 
   let set_children view ~keyed:_ children =
@@ -429,6 +546,67 @@ module Backend = struct
         (match tab.role with
          | None -> 0
          | Some Apple.Search -> 1))
+  ;;
+
+  let set_sidebar_shell
+    view
+    ~(header_action : Apple.rendered_sidebar_action option)
+    ~(actions : Apple.rendered_sidebar_action list)
+    ~bottom_search_placeholder
+    ~bottom_search_text
+    ~bottom_search_on_change
+    ~(bottom_action : Apple.rendered_sidebar_action option)
+    =
+    List.iter view.sidebar_event_ids ~f:(Hashtbl.remove event_handlers);
+    view.sidebar_event_ids <- [];
+    let install_sidebar_action (action : Apple.rendered_sidebar_action) =
+      let event_id = install_handler None (Click action.on_click) in
+      view.sidebar_event_ids <- event_id :: view.sidebar_event_ids;
+      event_id
+    in
+    let bottom_search_event_id =
+      match bottom_search_on_change with
+      | None ->
+        clear_handler view.sidebar_search_event_id;
+        view.sidebar_search_event_id <- None;
+        no_event
+      | Some on_change ->
+        let event_id =
+          install_handler view.sidebar_search_event_id (Change (fun text -> on_change text))
+        in
+        view.sidebar_search_event_id <- Some event_id;
+        event_id
+    in
+    clear_native_sidebar_shell
+      view.native
+      bottom_search_placeholder
+      bottom_search_text
+      bottom_search_event_id;
+    (match header_action with
+     | None -> set_native_sidebar_header_action view.native None None None no_event
+     | Some action ->
+       set_native_sidebar_header_action
+         view.native
+         (Some action.Apple.id)
+         (Some action.title)
+         action.system_image
+         (install_sidebar_action action));
+    List.iter actions ~f:(fun action ->
+      append_native_sidebar_action
+        view.native
+        action.Apple.id
+        action.title
+        action.system_image
+        (install_sidebar_action action));
+    match bottom_action with
+    | None -> set_native_sidebar_bottom_action view.native None None None no_event
+    | Some action ->
+      set_native_sidebar_bottom_action
+        view.native
+        (Some action.Apple.id)
+        (Some action.title)
+        action.system_image
+        (install_sidebar_action action)
   ;;
 
   let set_section view ~title = set_native_section view.native title
@@ -519,6 +697,17 @@ module Backend = struct
     | Apple.Destructive -> 1
   ;;
 
+  let list_row_content_style_id = function
+    | Apple.Standard -> 0
+    | Apple.Deck_preview -> 1
+    | Apple.Card_preview -> 2
+  ;;
+
+  let list_row_accessory_id = function
+    | Apple.No_accessory -> 0
+    | Apple.Disclosure_indicator -> 1
+  ;;
+
   let clear_row_events view =
     List.iter view.row_event_ids ~f:(Hashtbl.remove event_handlers);
     view.row_event_ids <- []
@@ -531,33 +720,19 @@ module Backend = struct
     !next_event_id
   ;;
 
-  let set_list_row
+  let refresh_list_row_callbacks
     view
-    ~title
-    ~subtitle
-    ~trailing_text
-    ~title_strikethrough
+    ~on_click
     ~(leading_button : Apple.rendered_row_leading_button option)
     ~(swipe_actions : Apple.rendered_row_action list)
+    ~(menu_actions : Apple.rendered_row_action list)
     =
+    set_on_click view on_click;
     clear_row_events view;
-    set_native_text view.native title;
-    set_native_list_row_subtitle view.native subtitle;
-    set_native_list_row_trailing_text view.native trailing_text;
-    set_native_list_row_title_strikethrough view.native title_strikethrough;
     (match leading_button with
-     | None ->
-       set_native_list_row_leading view.native None None false;
-       set_native_list_row_leading_accessibility view.native "";
-       set_native_list_row_leading_event view.native no_event
+     | None -> set_native_list_row_leading_event view.native no_event
      | Some leading ->
        let event_id = install_row_event view leading.Apple.on_click in
-       set_native_list_row_leading
-         view.native
-         (Some leading.system_image)
-         leading.selected_system_image
-         leading.selected;
-       set_native_list_row_leading_accessibility view.native leading.accessibility_label;
        set_native_list_row_leading_event view.native event_id);
     clear_native_list_row_actions view.native;
     List.iter swipe_actions ~f:(fun action ->
@@ -567,7 +742,58 @@ module Backend = struct
         action.title
         action.system_image
         (style_id action.style)
+        event_id);
+    clear_native_list_row_menu_actions view.native;
+    List.iter menu_actions ~f:(fun action ->
+      let event_id = install_row_event view action.Apple.on_click in
+      append_native_list_row_menu_action
+        view.native
+        action.title
+        action.system_image
+        (style_id action.style)
         event_id)
+  ;;
+
+  let set_list_row
+    view
+    ~title
+    ~subtitle
+    ~trailing_text
+    ~leading_system_image
+    ~content_style
+    ~accessory
+    ~title_strikethrough
+    ~(leading_button : Apple.rendered_row_leading_button option)
+    ~(swipe_actions : Apple.rendered_row_action list)
+    ~(menu_actions : Apple.rendered_row_action list)
+    =
+    clear_row_events view;
+    set_native_text view.native title;
+    set_native_list_row_subtitle view.native subtitle;
+    set_native_list_row_trailing_text view.native trailing_text;
+    set_native_list_row_content_style
+      view.native
+      (list_row_content_style_id content_style);
+    set_native_list_row_accessory view.native (list_row_accessory_id accessory);
+    set_native_list_row_leading_system_image view.native leading_system_image;
+    set_native_list_row_title_strikethrough view.native title_strikethrough;
+    (match leading_button with
+     | None ->
+       set_native_list_row_leading view.native None None false;
+       set_native_list_row_leading_accessibility view.native ""
+     | Some leading ->
+       set_native_list_row_leading
+         view.native
+         (Some leading.system_image)
+         leading.selected_system_image
+         leading.selected;
+       set_native_list_row_leading_accessibility view.native leading.accessibility_label);
+    refresh_list_row_callbacks
+      view
+      ~on_click:None
+      ~leading_button
+      ~swipe_actions
+      ~menu_actions
   ;;
 
   let install_searchable view ~schedule_event ~text ~on_change =
@@ -615,9 +841,38 @@ module Backend = struct
     set_native_sheet view.native None false no_event
   ;;
 
+  let install_toolbar view ~schedule_event items =
+    List.iter view.toolbar_event_ids ~f:(fun event_id -> clear_handler (Some event_id));
+    view.toolbar_event_ids <- [];
+    clear_native_toolbar view.native;
+    List.iter items ~f:(fun (item : Apple.toolbar_item) ->
+      let event_id = install_handler None (Click (fun () -> schedule_event item.on_click)) in
+      view.toolbar_event_ids <- event_id :: view.toolbar_event_ids;
+      append_native_toolbar_item view.native item.id item.title item.system_image event_id;
+      List.iter item.menu_actions ~f:(fun action ->
+        let event_id =
+          install_handler None (Click (fun () -> schedule_event action.on_click))
+        in
+        view.toolbar_event_ids <- event_id :: view.toolbar_event_ids;
+        append_native_toolbar_menu_action
+          view.native
+          item.id
+          action.title
+          action.system_image
+          (style_id action.style)
+          event_id))
+  ;;
+
+  let clear_toolbar view =
+    List.iter view.toolbar_event_ids ~f:(fun event_id -> clear_handler (Some event_id));
+    view.toolbar_event_ids <- [];
+    clear_native_toolbar view.native
+  ;;
+
   let set_modifiers view ~schedule_event modifiers =
     let saw_searchable = ref false in
     let saw_sheet = ref false in
+    let saw_toolbar = ref false in
     let saw_padding = ref false in
     let saw_frame = ref false in
     List.iter modifiers ~f:(function
@@ -636,9 +891,12 @@ module Backend = struct
           view.native
           (Option.value width ~default:(-1.))
           (Option.value height ~default:(-1.))
-      | Apple.Rendered_toolbar _ -> ());
+      | Apple.Rendered_toolbar items ->
+        saw_toolbar := true;
+        install_toolbar view ~schedule_event items);
     if not !saw_searchable then clear_searchable view;
     if not !saw_sheet then clear_sheet view;
+    if not !saw_toolbar then clear_toolbar view;
     if not !saw_padding then set_native_padding view.native (-1.) (-1.) (-1.) (-1.);
     if not !saw_frame then set_native_frame view.native (-1.) (-1.)
   ;;

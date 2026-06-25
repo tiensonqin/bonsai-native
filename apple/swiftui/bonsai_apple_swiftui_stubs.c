@@ -31,6 +31,7 @@ extern void bonsai_native_swiftui_set_text_attributes(
   int32_t color);
 extern void bonsai_native_swiftui_set_enabled(void *node, bool is_enabled);
 extern void bonsai_native_swiftui_set_placeholder(void *node, const char *text);
+extern void bonsai_native_swiftui_set_text_field_style(void *node, int32_t style);
 extern void bonsai_native_swiftui_set_spacing(void *node, double spacing);
 extern void bonsai_native_swiftui_set_children(void *node, void **children, int32_t count);
 extern void bonsai_native_swiftui_set_on_click(void *node, int32_t event_id);
@@ -39,9 +40,18 @@ extern void bonsai_native_swiftui_set_list_row_subtitle(void *node, const char *
 extern void bonsai_native_swiftui_set_list_row_trailing_text(
   void *node,
   const char *trailing_text);
+extern void bonsai_native_swiftui_set_list_row_content_style(
+  void *node,
+  int32_t content_style);
+extern void bonsai_native_swiftui_set_list_row_accessory(
+  void *node,
+  int32_t accessory);
 extern void bonsai_native_swiftui_set_list_row_title_strikethrough(
   void *node,
   bool title_strikethrough);
+extern void bonsai_native_swiftui_set_list_row_leading_system_image(
+  void *node,
+  const char *system_image);
 extern void bonsai_native_swiftui_set_list_row_leading(
   void *node,
   const char *system_image,
@@ -58,12 +68,33 @@ extern void bonsai_native_swiftui_append_list_row_action(
   const char *system_image,
   int32_t style,
   int32_t event_id);
+extern void bonsai_native_swiftui_clear_list_row_menu_actions(void *node);
+extern void bonsai_native_swiftui_append_list_row_menu_action(
+  void *node,
+  const char *title,
+  const char *system_image,
+  int32_t style,
+  int32_t event_id);
 extern void bonsai_native_swiftui_set_searchable(void *node, int32_t event_id, const char *text);
 extern void bonsai_native_swiftui_set_sheet(
   void *node,
   void *content,
   bool is_presented,
   int32_t dismiss_event_id);
+extern void bonsai_native_swiftui_clear_toolbar(void *node);
+extern void bonsai_native_swiftui_append_toolbar_item(
+  void *node,
+  const char *id,
+  const char *title,
+  const char *system_image,
+  int32_t event_id);
+extern void bonsai_native_swiftui_append_toolbar_menu_action(
+  void *node,
+  const char *item_id,
+  const char *title,
+  const char *system_image,
+  int32_t style,
+  int32_t event_id);
 extern void bonsai_native_swiftui_set_padding(
   void *node,
   double top,
@@ -81,6 +112,29 @@ extern void bonsai_native_swiftui_append_tab(
   const char *title,
   const char *system_image,
   int32_t role);
+extern void bonsai_native_swiftui_clear_sidebar_shell(
+  void *node,
+  const char *bottom_search_placeholder,
+  const char *bottom_search_text,
+  int32_t bottom_search_event_id);
+extern void bonsai_native_swiftui_set_sidebar_header_action(
+  void *node,
+  const char *header_action_id,
+  const char *header_action_title,
+  const char *header_action_system_image,
+  int32_t header_action_event_id);
+extern void bonsai_native_swiftui_append_sidebar_action(
+  void *node,
+  const char *id,
+  const char *title,
+  const char *system_image,
+  int32_t event_id);
+extern void bonsai_native_swiftui_set_sidebar_bottom_action(
+  void *node,
+  const char *id,
+  const char *title,
+  const char *system_image,
+  int32_t event_id);
 extern void bonsai_native_swiftui_set_section(void *node, const char *title);
 extern void bonsai_native_swiftui_clear_picker(
   void *node,
@@ -220,6 +274,11 @@ static void *pointer_val(value raw_value)
   return (void *)Nativeint_val(raw_value);
 }
 
+static const char *option_string_val(value raw_value)
+{
+  return Is_block(raw_value) ? String_val(Field(raw_value, 0)) : NULL;
+}
+
 static value value_of_pointer(void *pointer)
 {
   return caml_copy_nativeint((intnat)pointer);
@@ -342,6 +401,13 @@ CAMLprim value bonsai_apple_swiftui_set_placeholder(value node, value placeholde
   CAMLreturn(Val_unit);
 }
 
+CAMLprim value bonsai_apple_swiftui_set_text_field_style(value node, value style)
+{
+  CAMLparam2(node, style);
+  bonsai_native_swiftui_set_text_field_style(pointer_val(node), Int_val(style));
+  CAMLreturn(Val_unit);
+}
+
 CAMLprim value bonsai_apple_swiftui_set_spacing(value node, value spacing)
 {
   CAMLparam2(node, spacing);
@@ -402,6 +468,20 @@ CAMLprim value bonsai_apple_swiftui_set_list_row_trailing_text(value node, value
   CAMLreturn(Val_unit);
 }
 
+CAMLprim value bonsai_apple_swiftui_set_list_row_content_style(value node, value content_style)
+{
+  CAMLparam2(node, content_style);
+  bonsai_native_swiftui_set_list_row_content_style(pointer_val(node), Int_val(content_style));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_list_row_accessory(value node, value accessory)
+{
+  CAMLparam2(node, accessory);
+  bonsai_native_swiftui_set_list_row_accessory(pointer_val(node), Int_val(accessory));
+  CAMLreturn(Val_unit);
+}
+
 CAMLprim value bonsai_apple_swiftui_set_list_row_title_strikethrough(
   value node,
   value title_strikethrough)
@@ -410,6 +490,17 @@ CAMLprim value bonsai_apple_swiftui_set_list_row_title_strikethrough(
   bonsai_native_swiftui_set_list_row_title_strikethrough(
     pointer_val(node),
     Bool_val(title_strikethrough));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_list_row_leading_system_image(
+  value node,
+  value system_image)
+{
+  CAMLparam2(node, system_image);
+  bonsai_native_swiftui_set_list_row_leading_system_image(
+    pointer_val(node),
+    Is_none(system_image) ? NULL : String_val(Some_val(system_image)));
   CAMLreturn(Val_unit);
 }
 
@@ -468,6 +559,30 @@ CAMLprim value bonsai_apple_swiftui_append_list_row_action(
   CAMLreturn(Val_unit);
 }
 
+CAMLprim value bonsai_apple_swiftui_clear_list_row_menu_actions(value node)
+{
+  CAMLparam1(node);
+  bonsai_native_swiftui_clear_list_row_menu_actions(pointer_val(node));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_append_list_row_menu_action(
+  value node,
+  value title,
+  value system_image,
+  value style,
+  value event_id)
+{
+  CAMLparam5(node, title, system_image, style, event_id);
+  bonsai_native_swiftui_append_list_row_menu_action(
+    pointer_val(node),
+    String_val(title),
+    Is_none(system_image) ? NULL : String_val(Some_val(system_image)),
+    Int_val(style),
+    Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
 CAMLprim value bonsai_apple_swiftui_set_searchable(value node, value event_id, value text)
 {
   CAMLparam3(node, event_id, text);
@@ -494,6 +609,50 @@ CAMLprim value bonsai_apple_swiftui_set_sheet(
     Is_none(content) ? NULL : pointer_val(Some_val(content)),
     Bool_val(is_presented),
     Int_val(dismiss_event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_clear_toolbar(value node)
+{
+  CAMLparam1(node);
+  bonsai_native_swiftui_clear_toolbar(pointer_val(node));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_append_toolbar_item(
+  value node,
+  value id,
+  value title,
+  value system_image,
+  value event_id)
+{
+  CAMLparam5(node, id, title, system_image, event_id);
+  bonsai_native_swiftui_append_toolbar_item(
+    pointer_val(node),
+    String_val(id),
+    String_val(title),
+    option_string_val(system_image),
+    Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_append_toolbar_menu_action(
+  value node,
+  value item_id,
+  value title,
+  value system_image,
+  value style,
+  value event_id)
+{
+  CAMLparam5(node, item_id, title, system_image, style);
+  CAMLxparam1(event_id);
+  bonsai_native_swiftui_append_toolbar_menu_action(
+    pointer_val(node),
+    String_val(item_id),
+    String_val(title),
+    option_string_val(system_image),
+    Int_val(style),
+    Int_val(event_id));
   CAMLreturn(Val_unit);
 }
 
@@ -542,6 +701,72 @@ CAMLprim value bonsai_apple_swiftui_append_tab(
     String_val(title),
     Is_none(system_image) ? NULL : String_val(Some_val(system_image)),
     Int_val(role));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_clear_sidebar_shell(
+  value node,
+  value bottom_search_placeholder,
+  value bottom_search_text,
+  value bottom_search_event_id)
+{
+  CAMLparam4(node, bottom_search_placeholder, bottom_search_text, bottom_search_event_id);
+  bonsai_native_swiftui_clear_sidebar_shell(
+    pointer_val(node),
+    Is_none(bottom_search_placeholder) ? NULL : String_val(Some_val(bottom_search_placeholder)),
+    String_val(bottom_search_text),
+    Int_val(bottom_search_event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_sidebar_header_action(
+  value node,
+  value id,
+  value title,
+  value system_image,
+  value event_id)
+{
+  CAMLparam5(node, id, title, system_image, event_id);
+  bonsai_native_swiftui_set_sidebar_header_action(
+    pointer_val(node),
+    Is_none(id) ? NULL : String_val(Some_val(id)),
+    Is_none(title) ? NULL : String_val(Some_val(title)),
+    Is_none(system_image) ? NULL : String_val(Some_val(system_image)),
+    Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_append_sidebar_action(
+  value node,
+  value id,
+  value title,
+  value system_image,
+  value event_id)
+{
+  CAMLparam5(node, id, title, system_image, event_id);
+  bonsai_native_swiftui_append_sidebar_action(
+    pointer_val(node),
+    String_val(id),
+    String_val(title),
+    Is_none(system_image) ? NULL : String_val(Some_val(system_image)),
+    Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_sidebar_bottom_action(
+  value node,
+  value id,
+  value title,
+  value system_image,
+  value event_id)
+{
+  CAMLparam5(node, id, title, system_image, event_id);
+  bonsai_native_swiftui_set_sidebar_bottom_action(
+    pointer_val(node),
+    Is_none(id) ? NULL : String_val(Some_val(id)),
+    Is_none(title) ? NULL : String_val(Some_val(title)),
+    Is_none(system_image) ? NULL : String_val(Some_val(system_image)),
+    Int_val(event_id));
   CAMLreturn(Val_unit);
 }
 

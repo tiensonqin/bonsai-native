@@ -16,9 +16,30 @@ type frame =
   }
 [@@deriving sexp_of]
 
+type row_action_style =
+  | Default
+  | Destructive
+[@@deriving sexp_of, equal]
+
+type toolbar_menu_action =
+  { title : string
+  ; system_image : string option
+  ; style : row_action_style
+  ; on_click : unit Effect.t
+  }
+
 type toolbar_item =
   { id : string
   ; title : string
+  ; system_image : string option
+  ; on_click : unit Effect.t
+  ; menu_actions : toolbar_menu_action list
+  }
+
+type sidebar_action =
+  { id : string
+  ; title : string
+  ; system_image : string option
   ; on_click : unit Effect.t
   }
 
@@ -48,16 +69,16 @@ type text_color =
   | Tertiary
 [@@deriving sexp_of, equal]
 
+type text_field_style =
+  | Rounded_border
+  | Pill
+[@@deriving sexp_of, equal]
+
 type text_attributes =
   { style : text_style
   ; weight : text_weight
   ; color : text_color
   }
-[@@deriving sexp_of, equal]
-
-type row_action_style =
-  | Default
-  | Destructive
 [@@deriving sexp_of, equal]
 
 type row_leading_button =
@@ -74,6 +95,17 @@ type row_action =
   ; style : row_action_style
   ; on_click : unit Effect.t
   }
+
+type list_row_content_style =
+  | Standard
+  | Deck_preview
+  | Card_preview
+[@@deriving sexp_of, equal]
+
+type list_row_accessory =
+  | No_accessory
+  | Disclosure_indicator
+[@@deriving sexp_of, equal]
 
 type picker_option =
   { id : string
@@ -104,10 +136,14 @@ type list_row =
   { title : string
   ; subtitle : string option
   ; trailing_text : string option
+  ; leading_system_image : string option
+  ; content_style : list_row_content_style
+  ; accessory : list_row_accessory
   ; title_strikethrough : bool
   ; on_click : unit Effect.t option
   ; leading_button : row_leading_button option
   ; swipe_actions : row_action list
+  ; menu_actions : row_action list
   }
 
 type tab_role = Search [@@deriving sexp_of, equal]
@@ -119,6 +155,13 @@ type rendered_tab =
   ; role : tab_role option
   }
 [@@deriving sexp_of, equal]
+
+type rendered_sidebar_action =
+  { id : string
+  ; title : string
+  ; system_image : string option
+  ; on_click : unit -> unit
+  }
 
 type axis =
   | Vertical
@@ -162,7 +205,9 @@ type node =
   | Text_field_node of
       { text : string
       ; placeholder : string option
+      ; style : text_field_style
       ; on_change : string -> unit Effect.t
+      ; on_submit : unit Effect.t option
       }
   | Text_editor_node of
       { text : string
@@ -195,6 +240,12 @@ type node =
       { selected : string
       ; on_select : string -> unit Effect.t
       ; tabs : tab list
+      ; header_action : sidebar_action option
+      ; actions : sidebar_action list
+      ; bottom_search_placeholder : string option
+      ; bottom_search_text : string
+      ; bottom_search_on_change : (string -> unit Effect.t) option
+      ; bottom_action : sidebar_action option
       }
   | Image_node of string
   | List_row_node of list_row
@@ -308,8 +359,8 @@ let text ?(style = Body) ?(weight = Regular) ?(color = Primary) value =
 
 let button ?(is_enabled = true) title ~on_click = Button_node { title; is_enabled; on_click }
 
-let text_field ?placeholder ~text ~on_change () =
-  Text_field_node { text; placeholder; on_change }
+let text_field ?placeholder ?(style = Rounded_border) ?on_submit ~text ~on_change () =
+  Text_field_node { text; placeholder; style; on_change; on_submit }
 ;;
 
 let text_editor ?placeholder ~text ~on_change () =
@@ -368,13 +419,38 @@ let tab_view ~selected ~on_select (tabs : tab list) =
   Tab_view_node { selected; on_select; tabs }
 ;;
 
-let sidebar_split ~selected ~on_select (tabs : tab list) =
+let sidebar_split
+  ?(header_action : sidebar_action option)
+  ?(actions = ([] : sidebar_action list))
+  ?bottom_search_placeholder
+  ?(bottom_search_text = "")
+  ?bottom_search_on_change
+  ?(bottom_action : sidebar_action option)
+  ~selected
+  ~on_select
+  (tabs : tab list)
+  =
   let seen = String.Hash_set.create () in
   List.iter tabs ~f:(fun tab ->
     if Hash_set.mem seen tab.id
     then failwithf "duplicate Bonsai Apple sidebar route id: %s" tab.id ();
     Hash_set.add seen tab.id);
-  Sidebar_split_node { selected; on_select; tabs }
+  let seen_actions = String.Hash_set.create () in
+  List.iter (Option.to_list header_action @ actions @ Option.to_list bottom_action) ~f:(fun action ->
+    if Hash_set.mem seen_actions action.id
+    then failwithf "duplicate Bonsai Apple sidebar action id: %s" action.id ();
+    Hash_set.add seen_actions action.id);
+  Sidebar_split_node
+    { selected
+    ; on_select
+    ; tabs
+    ; header_action
+    ; actions
+    ; bottom_search_placeholder
+    ; bottom_search_text
+    ; bottom_search_on_change
+    ; bottom_action
+    }
 ;;
 
 let image name = Image_node name
@@ -538,8 +614,17 @@ let default_insets = { top = 8.; leading = 8.; bottom = 8.; trailing = 8. }
 let padding ?(insets = default_insets) node = Modified_node (Padding insets, node)
 let frame ?width ?height node = Modified_node (Frame { width; height }, node)
 let searchable ~text ~on_change node = Modified_node (Searchable { text; on_change }, node)
-let toolbar_item ~id ~title ~on_click = { id; title; on_click }
+let toolbar_item ?system_image ?(menu_actions = []) ~id ~title ~on_click ()
+  : toolbar_item
+  =
+  { id; title; system_image; on_click; menu_actions }
+;;
 let toolbar items node = Modified_node (Toolbar items, node)
+let sidebar_action ~id ~title ?system_image ~(on_click : unit Effect.t) ()
+  : sidebar_action
+  =
+  { id; title; system_image; on_click }
+;;
 
 let sheet ~is_presented ~content ?on_dismiss node =
   Modified_node (Sheet { is_presented; content; on_dismiss }, node)
@@ -587,6 +672,7 @@ module Renderer = struct
     val set_text : view -> string -> unit
     val set_text_attributes : view -> text_attributes -> unit
     val set_placeholder : view -> string option -> unit
+    val set_text_field_style : view -> text_field_style -> unit
     val set_spacing : view -> float option -> unit
     val set_children : view -> keyed:(string option) list -> view list -> unit
     val set_tabs
@@ -595,14 +681,34 @@ module Renderer = struct
       -> on_select:(string -> unit) option
       -> rendered_tab list
       -> unit
+    val set_sidebar_shell
+      :  view
+      -> header_action:rendered_sidebar_action option
+      -> actions:rendered_sidebar_action list
+      -> bottom_search_placeholder:string option
+      -> bottom_search_text:string
+      -> bottom_search_on_change:(string -> unit) option
+      -> bottom_action:rendered_sidebar_action option
+      -> unit
     val set_list_row
       :  view
       -> title:string
       -> subtitle:string option
       -> trailing_text:string option
+      -> leading_system_image:string option
+      -> content_style:list_row_content_style
+      -> accessory:list_row_accessory
       -> title_strikethrough:bool
       -> leading_button:rendered_row_leading_button option
       -> swipe_actions:rendered_row_action list
+      -> menu_actions:rendered_row_action list
+      -> unit
+    val refresh_list_row_callbacks
+      :  view
+      -> on_click:(unit -> unit) option
+      -> leading_button:rendered_row_leading_button option
+      -> swipe_actions:rendered_row_action list
+      -> menu_actions:rendered_row_action list
       -> unit
     val set_section : view -> title:string option -> unit
     val set_picker
@@ -670,8 +776,9 @@ module Renderer = struct
           | Toolbar items ->
             [%sexp
               ( "toolbar"
-              , (List.map items ~f:(fun item -> item.id, item.title)
-                 : (string * string) list) )]
+              , (List.map items ~f:(fun item ->
+                   item.id, item.title, item.system_image, List.length item.menu_actions)
+                 : (string * string * string option * int) list) )]
           | Sheet { is_presented; content; on_dismiss = _ } ->
             [%sexp "sheet", (is_presented : bool), (fingerprint content : string)])
       in
@@ -681,8 +788,12 @@ module Renderer = struct
           [%sexp "text", (text : string), (attributes : text_attributes)]
         | Button_node { title; is_enabled; on_click = _ } ->
           [%sexp "button", (title : string), (is_enabled : bool)]
-        | Text_field_node { text; placeholder; on_change = _ } ->
-          [%sexp "text-field", (text : string), (placeholder : string option)]
+        | Text_field_node { text; placeholder; style; on_change = _; on_submit = _ } ->
+          [%sexp
+            "text-field"
+          , (text : string)
+          , (placeholder : string option)
+          , (style : text_field_style)]
         | Text_editor_node { text; placeholder; on_change = _ } ->
           [%sexp "text-editor", (text : string), (placeholder : string option)]
         | Stack_node { axis; spacing; children } ->
@@ -720,27 +831,56 @@ module Renderer = struct
             List.map row.swipe_actions ~f:(fun action ->
               action.title, action.system_image, action.style)
           in
+          let menu_actions =
+            List.map row.menu_actions ~f:(fun action ->
+              action.title, action.system_image, action.style)
+          in
           [%sexp
             "list-row"
           , (row.title : string)
           , (row.subtitle : string option)
           , (row.trailing_text : string option)
+          , (row.leading_system_image : string option)
           , (row.title_strikethrough : bool)
           , (leading : (string * string option * bool * string) option)
-          , (actions : (string * string option * row_action_style) list)]
+          , (actions : (string * string option * row_action_style) list)
+          , (menu_actions : (string * string option * row_action_style) list)]
         | Section_node { key; title; children } ->
           [%sexp
             "section"
           , (key : string)
           , (title : string option)
           , (List.map children ~f:fingerprint : string list)]
-        | Tab_view_node { selected; tabs; on_select = _ }
-        | Sidebar_split_node { selected; tabs; on_select = _ } ->
+        | Tab_view_node { selected; tabs; on_select = _ } ->
           [%sexp
             ( "tabs"
             , (selected : string)
             , (List.map tabs ~f:(fun tab -> tab.id, tab.title, tab.system_image, tab.role, fingerprint tab.content)
                : (string * string * string option * tab_role option * string) list) )]
+        | Sidebar_split_node
+            { selected
+            ; tabs
+            ; on_select = _
+            ; header_action
+            ; actions
+            ; bottom_search_placeholder
+            ; bottom_search_text
+            ; bottom_search_on_change = _
+            ; bottom_action
+            } ->
+          [%sexp
+            ( "sidebar-tabs"
+            , (selected : string)
+            , (List.map tabs ~f:(fun tab -> tab.id, tab.title, tab.system_image, tab.role, fingerprint tab.content)
+               : (string * string * string option * tab_role option * string) list)
+            , (Option.map header_action ~f:(fun action -> action.id, action.title, action.system_image)
+               : (string * string * string option) option)
+            , (List.map actions ~f:(fun action -> action.id, action.title, action.system_image)
+               : (string * string * string option) list)
+            , (bottom_search_placeholder : string option)
+            , (bottom_search_text : string)
+            , (Option.map bottom_action ~f:(fun action -> action.id, action.title, action.system_image)
+               : (string * string * string option) option) )]
         | Image_node name -> [%sexp "image", (name : string)]
         | Picker_node { title; selected; options; on_select = _ } ->
           [%sexp "picker", (title : string), (selected : string), (options : picker_option list)]
@@ -837,10 +977,14 @@ module Renderer = struct
            (if is_enabled then Some (fun () -> t.schedule_event on_click) else None);
          Backend.set_on_change t.view None;
          replace_children []
-       | Text_field_node { text; placeholder; on_change } ->
+       | Text_field_node { text; placeholder; style; on_change; on_submit } ->
          Backend.set_text t.view text;
          Backend.set_placeholder t.view placeholder;
-         Backend.set_on_click t.view None;
+         Backend.set_text_field_style t.view style;
+         Backend.set_on_click
+           t.view
+           (Option.map on_submit ~f:(fun on_submit ->
+              fun () -> t.schedule_event on_submit));
          Backend.set_on_change
            t.view
            (Some (fun text -> t.schedule_event (on_change text)));
@@ -882,10 +1026,37 @@ module Renderer = struct
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          reconcile_tabs t ~selected ~on_select tabs
-       | Sidebar_split_node { selected; on_select; tabs } ->
+       | Sidebar_split_node
+           { selected
+           ; on_select
+           ; tabs
+           ; header_action
+           ; actions
+           ; bottom_search_placeholder
+           ; bottom_search_text
+           ; bottom_search_on_change
+           ; bottom_action
+           } ->
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
-         reconcile_tabs t ~selected ~on_select tabs
+         reconcile_tabs t ~selected ~on_select tabs;
+         let render_action (action : sidebar_action) =
+           { id = action.id
+           ; title = action.title
+           ; system_image = action.system_image
+           ; on_click = (fun () -> t.schedule_event action.on_click)
+           }
+         in
+         Backend.set_sidebar_shell
+           t.view
+           ~header_action:(Option.map header_action ~f:render_action)
+           ~actions:(List.map actions ~f:render_action)
+           ~bottom_search_placeholder
+           ~bottom_search_text
+           ~bottom_search_on_change:
+             (Option.map bottom_search_on_change ~f:(fun on_change ->
+                fun text -> t.schedule_event (on_change text)))
+           ~bottom_action:(Option.map bottom_action ~f:render_action)
        | Image_node name ->
          Backend.set_text t.view name;
          Backend.set_on_click t.view None;
@@ -895,16 +1066,23 @@ module Renderer = struct
            { title
            ; subtitle
            ; trailing_text
+           ; leading_system_image
+           ; content_style
+           ; accessory
            ; title_strikethrough
            ; on_click
            ; leading_button
            ; swipe_actions
+           ; menu_actions
            } ->
          Backend.set_list_row
            t.view
            ~title
            ~subtitle
            ~trailing_text
+           ~leading_system_image
+           ~content_style
+           ~accessory
            ~title_strikethrough
            ~leading_button:
              (Option.map leading_button ~f:(fun leading_button ->
@@ -916,6 +1094,13 @@ module Renderer = struct
                 }))
            ~swipe_actions:
              (List.map swipe_actions ~f:(fun action ->
+                { title = action.title
+                ; system_image = action.system_image
+                ; style = action.style
+                ; on_click = (fun () -> t.schedule_event action.on_click)
+                }))
+           ~menu_actions:
+             (List.map menu_actions ~f:(fun action ->
                 { title = action.title
                 ; system_image = action.system_image
                 ; style = action.style
@@ -983,6 +1168,54 @@ module Renderer = struct
          replace_children []
        | Modified_node _ -> assert false)
 
+    and rendered_list_row_callbacks
+      t
+      ~on_click
+      ~(leading_button : row_leading_button option)
+      ~(swipe_actions : row_action list)
+      ~(menu_actions : row_action list)
+      =
+      ( Option.map leading_button ~f:(fun leading_button ->
+          { system_image = leading_button.system_image
+          ; selected_system_image = leading_button.selected_system_image
+          ; selected = leading_button.selected
+          ; accessibility_label = leading_button.accessibility_label
+          ; on_click = (fun () -> t.schedule_event leading_button.on_click)
+          })
+      , List.map swipe_actions ~f:(fun action ->
+          { title = action.title
+          ; system_image = action.system_image
+          ; style = action.style
+          ; on_click = (fun () -> t.schedule_event action.on_click)
+          })
+      , List.map menu_actions ~f:(fun action ->
+          { title = action.title
+          ; system_image = action.system_image
+          ; style = action.style
+          ; on_click = (fun () -> t.schedule_event action.on_click)
+          })
+      , Option.map on_click ~f:(fun on_click -> fun () -> t.schedule_event on_click)
+      )
+
+    and refresh_callbacks t node =
+      match node with
+      | List_row_node { on_click; leading_button; swipe_actions; menu_actions; _ } ->
+        let leading_button, swipe_actions, menu_actions, on_click =
+          rendered_list_row_callbacks
+            t
+            ~on_click
+            ~leading_button
+            ~swipe_actions
+            ~menu_actions
+        in
+        Backend.refresh_list_row_callbacks
+          t.view
+          ~on_click
+          ~leading_button
+          ~swipe_actions
+          ~menu_actions
+      | _ -> ()
+
     and update t node =
       let node, modifiers = unwrap_modifiers node in
       let new_kind = backend_kind node in
@@ -1007,6 +1240,7 @@ module Renderer = struct
         when equal_backend_kind child.mounted.kind new_kind
              && can_skip_patch_when_unchanged base_node
              && String.equal child.mounted.fingerprint next_fingerprint ->
+        refresh_callbacks child.mounted base_node;
         child.mounted
       | Some child when equal_backend_kind child.mounted.kind new_kind ->
         patch_same_kind child.mounted base_node modifiers;
@@ -1172,6 +1406,7 @@ module For_testing = struct
       ; mutable text : string option
       ; mutable text_attributes : text_attributes
       ; mutable placeholder : string option
+      ; mutable text_field_style : text_field_style
       ; mutable children : (string option * view) list
       ; mutable is_enabled : bool
       ; mutable on_click : (unit -> unit) option
@@ -1179,6 +1414,12 @@ module For_testing = struct
       ; mutable selected_tab : string option
       ; mutable on_select_tab : (string -> unit) option
       ; mutable tabs : rendered_tab list
+      ; mutable sidebar_header_action : rendered_sidebar_action option
+      ; mutable sidebar_actions : rendered_sidebar_action list
+      ; mutable sidebar_bottom_search_placeholder : string option
+      ; mutable sidebar_bottom_search_text : string
+      ; mutable sidebar_bottom_search_on_change : (string -> unit) option
+      ; mutable sidebar_bottom_action : rendered_sidebar_action option
       ; mutable section_title : string option
       ; mutable picker_title : string option
       ; mutable picker_selected : string option
@@ -1191,6 +1432,7 @@ module For_testing = struct
       ; mutable list_row : string option
       ; mutable row_leading_button : rendered_row_leading_button option
       ; mutable row_actions : rendered_row_action list
+      ; mutable row_menu_actions : rendered_row_action list
       ; mutable modifiers : view rendered_modifier list
       ; mutable schedule_event : (unit Effect.t -> unit) option
       }
@@ -1228,6 +1470,7 @@ module For_testing = struct
       ; text = None
       ; text_attributes = default_text_attributes
       ; placeholder = None
+      ; text_field_style = Rounded_border
       ; children = []
       ; is_enabled = true
       ; on_click = None
@@ -1235,6 +1478,12 @@ module For_testing = struct
       ; selected_tab = None
       ; on_select_tab = None
       ; tabs = []
+      ; sidebar_header_action = None
+      ; sidebar_actions = []
+      ; sidebar_bottom_search_placeholder = None
+      ; sidebar_bottom_search_text = ""
+      ; sidebar_bottom_search_on_change = None
+      ; sidebar_bottom_action = None
       ; section_title = None
       ; picker_title = None
       ; picker_selected = None
@@ -1247,6 +1496,7 @@ module For_testing = struct
       ; list_row = None
       ; row_leading_button = None
       ; row_actions = []
+      ; row_menu_actions = []
       ; modifiers = []
       ; schedule_event = None
       }
@@ -1269,6 +1519,11 @@ module For_testing = struct
       view.placeholder <- placeholder
     ;;
 
+    let set_text_field_style view style =
+      mutate ();
+      view.text_field_style <- style
+    ;;
+
     let set_spacing _view _spacing = mutate ()
 
     let set_enabled view is_enabled =
@@ -1288,14 +1543,36 @@ module For_testing = struct
       view.tabs <- tabs
     ;;
 
+    let set_sidebar_shell
+      view
+      ~header_action
+      ~actions
+      ~bottom_search_placeholder
+      ~bottom_search_text
+      ~bottom_search_on_change
+      ~bottom_action
+      =
+      mutate ();
+      view.sidebar_header_action <- header_action;
+      view.sidebar_actions <- actions;
+      view.sidebar_bottom_search_placeholder <- bottom_search_placeholder;
+      view.sidebar_bottom_search_text <- bottom_search_text;
+      view.sidebar_bottom_search_on_change <- bottom_search_on_change;
+      view.sidebar_bottom_action <- bottom_action
+    ;;
+
     let set_list_row
       view
       ~title
       ~subtitle
       ~trailing_text
+      ~leading_system_image
+      ~content_style
+      ~accessory
       ~title_strikethrough
       ~(leading_button : rendered_row_leading_button option)
       ~(swipe_actions : rendered_row_action list)
+      ~(menu_actions : rendered_row_action list)
       =
       mutate ();
       let leading =
@@ -1318,18 +1595,48 @@ module For_testing = struct
           action.title ^ ":" ^ style)
         |> String.concat ~sep:","
       in
+      let menu_actions_text =
+        menu_actions
+        |> List.map ~f:(fun action ->
+          let style =
+            match action.style with
+            | Default -> "default"
+            | Destructive -> "destructive"
+          in
+          action.title ^ ":" ^ style)
+        |> String.concat ~sep:","
+      in
       view.row_leading_button <- leading_button;
       view.row_actions <- swipe_actions;
+      view.row_menu_actions <- menu_actions;
       view.list_row
       <- Some
            (sprintf
-              " title=%s subtitle=%s trailing=%s strikethrough=%s %s actions=[%s]"
+              " title=%s subtitle=%s trailing=%s style=%s accessory=%s strikethrough=%s leading-image=%s %s actions=[%s] menu=[%s]"
               (Sexp.to_string_hum ([%sexp_of: string] title))
               (Sexp.to_string_hum ([%sexp_of: string option] subtitle))
               (Sexp.to_string_hum ([%sexp_of: string option] trailing_text))
+              (Sexp.to_string_hum ([%sexp_of: list_row_content_style] content_style))
+              (Sexp.to_string_hum ([%sexp_of: list_row_accessory] accessory))
               (Bool.to_string title_strikethrough)
+              (Option.value leading_system_image ~default:"none")
               leading
-              actions)
+              actions
+              menu_actions_text)
+    ;;
+
+    let refresh_list_row_callbacks
+      view
+      ~on_click
+      ~leading_button
+      ~swipe_actions
+      ~menu_actions
+      =
+      view.on_click <- on_click;
+      view.on_change <- None;
+      view.row_leading_button <- leading_button;
+      view.row_actions <- swipe_actions;
+      view.row_menu_actions <- menu_actions
     ;;
 
     let set_section view ~title =
@@ -1437,6 +1744,12 @@ module For_testing = struct
         | _, Some placeholder ->
           " placeholder=" ^ Sexp.to_string_hum ([%sexp_of: string] placeholder)
       in
+      let text_field_style =
+        match view.kind with
+        | Text_field ->
+          " style=" ^ Sexp.to_string_hum ([%sexp_of: text_field_style] view.text_field_style)
+        | _ -> ""
+      in
       let photo_picker =
         match view.kind with
         | Photo_picker ->
@@ -1501,6 +1814,43 @@ module For_testing = struct
         | _, tabs ->
           " tabs=[" ^ String.concat ~sep:"," (List.map tabs ~f:tab_name) ^ "]"
       in
+      let sidebar_action_name (action : rendered_sidebar_action) =
+        let image =
+          match action.system_image with
+          | None -> ""
+          | Some image -> ":" ^ image
+        in
+        action.id ^ ":" ^ action.title ^ image
+      in
+      let sidebar_header_action =
+        match view.kind, view.sidebar_header_action with
+        | Sidebar_split, Some action ->
+          " sidebar-header-action=" ^ sidebar_action_name action
+        | _ -> ""
+      in
+      let sidebar_actions =
+        match view.kind, view.sidebar_actions with
+        | Sidebar_split, (_ :: _ as actions) ->
+          " sidebar-actions=["
+          ^ String.concat ~sep:"," (List.map actions ~f:sidebar_action_name)
+          ^ "]"
+        | _ -> ""
+      in
+      let sidebar_bottom_search =
+        match view.kind, view.sidebar_bottom_search_placeholder with
+        | Sidebar_split, Some placeholder ->
+          " sidebar-bottom-search="
+          ^ placeholder
+          ^ " text="
+          ^ String.escaped view.sidebar_bottom_search_text
+        | _ -> ""
+      in
+      let sidebar_bottom_action =
+        match view.kind, view.sidebar_bottom_action with
+        | Sidebar_split, Some action ->
+          " sidebar-bottom-action=" ^ sidebar_action_name action
+        | _ -> ""
+      in
       let section =
         match view.section_title with
         | None -> ""
@@ -1538,6 +1888,7 @@ module For_testing = struct
        ^ text
        ^ text_attributes
        ^ placeholder
+       ^ text_field_style
        ^ photo_picker
        ^ camera_capture
        ^ file_exporter
@@ -1546,6 +1897,10 @@ module For_testing = struct
        ^ enabled
        ^ selected
        ^ tabs
+       ^ sidebar_header_action
+       ^ sidebar_actions
+       ^ sidebar_bottom_search
+       ^ sidebar_bottom_action
        ^ section
        ^ picker
        ^ list_row
@@ -1578,6 +1933,13 @@ module For_testing = struct
       match view.on_change with
       | Some f -> f text
       | None -> failwith "View has no text-change handler"
+    ;;
+
+    let submit_text_exn view ~path =
+      let view = find_exn view ~path in
+      match view.on_click with
+      | Some f -> f ()
+      | None -> failwith "View has no text-submit handler"
     ;;
 
     let select_photo_exn view ~path ~image_id =
@@ -1635,9 +1997,30 @@ module For_testing = struct
       click_exn (presented_sheet_content_exn view) ~path:sheet_path
     ;;
 
+    let import_sheet_file_exn view ~path ~sheet_path ~content =
+      let view = find_exn view ~path in
+      import_file_exn (presented_sheet_content_exn view) ~path:sheet_path ~content
+    ;;
+
     let change_sheet_text_exn view ~path ~sheet_path ~text =
       let view = find_exn view ~path in
       change_text_exn (presented_sheet_content_exn view) ~path:sheet_path ~text
+    ;;
+
+    let nested_sheet_host_exn view ~path ~host_path =
+      let view = find_exn view ~path in
+      presented_sheet_content_exn view |> find_exn ~path:host_path
+    ;;
+
+    let click_nested_sheet_exn view ~path ~host_path ~sheet_path =
+      click_exn (presented_sheet_content_exn (nested_sheet_host_exn view ~path ~host_path)) ~path:sheet_path
+    ;;
+
+    let change_nested_sheet_text_exn view ~path ~host_path ~sheet_path ~text =
+      change_text_exn
+        (presented_sheet_content_exn (nested_sheet_host_exn view ~path ~host_path))
+        ~path:sheet_path
+        ~text
     ;;
 
     let select_sheet_photo_exn view ~path ~sheet_path ~image_id =
@@ -1689,6 +2072,27 @@ module For_testing = struct
       | None -> failwithf "View has no toolbar item with id %S" id ()
     ;;
 
+    let click_toolbar_menu_action_exn view ~path ~id ~title =
+      let view = find_exn view ~path in
+      match
+        List.find_map view.modifiers ~f:(function
+          | Rendered_toolbar items ->
+            Option.bind
+              (List.find items ~f:(fun item -> String.equal item.id id))
+              ~f:(fun item ->
+                List.find item.menu_actions ~f:(fun action ->
+                  String.equal action.title title))
+          | _ -> None)
+      with
+      | Some action -> schedule_event_exn view action.on_click
+      | None ->
+        failwithf
+          "View has no toolbar menu action with id %S and title %S"
+          id
+          title
+          ()
+    ;;
+
     let dismiss_sheet_exn view ~path =
       let view = find_exn view ~path in
       match
@@ -1707,10 +2111,47 @@ module For_testing = struct
       | None -> failwith "View has no tab selection handler"
     ;;
 
+    let change_sidebar_bottom_search_exn view ~text =
+      view.sidebar_bottom_search_text <- text;
+      match view.sidebar_bottom_search_on_change with
+      | Some f -> f text
+      | None -> failwith "View has no sidebar bottom search handler"
+    ;;
+
     let select_sidebar_route_exn view ~id =
       match view.on_select_tab with
       | Some f -> f id
       | None -> failwith "View has no sidebar route selection handler"
+    ;;
+
+    let click_sidebar_header_action_exn view ~id =
+      match view.sidebar_header_action with
+      | Some action when String.equal action.id id -> action.on_click ()
+      | Some action ->
+        failwithf
+          "Expected sidebar header action id %s but found %s"
+          id
+          action.id
+          ()
+      | None -> failwith "View has no sidebar header action"
+    ;;
+
+    let click_sidebar_action_exn view ~id =
+      match List.find view.sidebar_actions ~f:(fun action -> String.equal action.id id) with
+      | Some action -> action.on_click ()
+      | None -> failwithf "View has no sidebar action with id %s" id ()
+    ;;
+
+    let click_sidebar_bottom_action_exn view ~id =
+      match view.sidebar_bottom_action with
+      | Some action when String.equal action.id id -> action.on_click ()
+      | Some action ->
+        failwithf
+          "Expected sidebar bottom action id %s but found %s"
+          id
+          action.id
+          ()
+      | None -> failwith "View has no sidebar bottom action"
     ;;
 
     let select_picker_exn view ~path ~id =
@@ -1718,6 +2159,11 @@ module For_testing = struct
       match view.on_select_picker with
       | Some f -> f id
       | None -> failwith "View has no picker selection handler"
+    ;;
+
+    let select_sheet_picker_exn view ~path ~sheet_path ~id =
+      let view = find_exn view ~path in
+      select_picker_exn (presented_sheet_content_exn view) ~path:sheet_path ~id
     ;;
 
     let click_row_leading_exn view ~path =
@@ -1732,6 +2178,15 @@ module For_testing = struct
       match List.find view.row_actions ~f:(fun action -> String.equal action.title title) with
       | Some action -> action.on_click ()
       | None -> failwithf "View has no row action with title %S" title ()
+    ;;
+
+    let click_row_menu_action_exn view ~path ~title =
+      let view = find_exn view ~path in
+      match
+        List.find view.row_menu_actions ~f:(fun action -> String.equal action.title title)
+      with
+      | Some action -> action.on_click ()
+      | None -> failwithf "View has no row menu action with title %S" title ()
     ;;
 
     let find_text_exn view ~path =

@@ -239,6 +239,7 @@ let set_text view text =
 let set_text_attributes _view _attributes = ()
 let set_enabled _view _is_enabled = ()
 let set_image_payload_mode _view _wants_payload = ()
+let set_text_field_style _view _style = ()
 
 let set_placeholder view placeholder =
   match view.kind, placeholder with
@@ -348,9 +349,13 @@ let set_list_row
   ~title:_
   ~subtitle:_
   ~trailing_text:_
+  ~leading_system_image:_
+  ~content_style:_
+  ~accessory:_
   ~title_strikethrough:_
   ~leading_button:_
   ~swipe_actions:_
+  ~menu_actions:_
   =
   failwith "Apple.list_row is only supported by the SwiftUI backend"
 ;;
@@ -576,6 +581,7 @@ module Backend = struct
   let set_text_attributes = set_text_attributes
   let set_enabled = set_enabled
   let set_placeholder = set_placeholder
+  let set_text_field_style = set_text_field_style
   let set_spacing = set_spacing
   let set_children = set_children
   let set_tabs = set_tabs

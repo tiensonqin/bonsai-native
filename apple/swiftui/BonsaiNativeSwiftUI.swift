@@ -53,6 +53,32 @@ private enum NodeKind: Int32 {
   case adaptiveLayout = 21
 }
 
+private let bonsaiLightBackgroundComponent: CGFloat = 0.965
+
+private var bonsaiHomeBodyBackground: Color {
+  Color(uiColor: UIColor { traits in
+    if traits.userInterfaceStyle == .dark {
+      return .systemBackground
+    }
+    return UIColor(
+      red: bonsaiLightBackgroundComponent,
+      green: bonsaiLightBackgroundComponent,
+      blue: bonsaiLightBackgroundComponent,
+      alpha: 1
+    )
+  })
+}
+
+private struct BonsaiHeaderIconChrome: ViewModifier {
+  func body(content: Content) -> some View {
+    content
+      .frame(width: 34, height: 34)
+      .contentShape(Circle())
+      .background(.thinMaterial, in: Circle())
+      .shadow(color: .black.opacity(0.08), radius: 18, y: 8)
+  }
+}
+
 private struct BonsaiNativeRowAction: Identifiable {
   let id = UUID()
   let title: String
@@ -68,6 +94,21 @@ private struct BonsaiNativeTab: Identifiable {
   let role: Int32
 }
 
+private struct BonsaiNativeSidebarAction: Identifiable {
+  let id: String
+  let title: String
+  let systemImage: String?
+  let eventId: Int32?
+}
+
+private struct BonsaiNativeToolbarItem: Identifiable {
+  let id: String
+  let title: String
+  let systemImage: String?
+  let eventId: Int32?
+  var menuActions: [BonsaiNativeRowAction]
+}
+
 private struct BonsaiNativePickerOption: Identifiable {
   let id: String
   let title: String
@@ -81,6 +122,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var textStyle: Int32 = 5
   @Published var textWeight: Int32 = 0
   @Published var textColor: Int32 = 0
+  @Published var textFieldStyle: Int32 = 0
   @Published var isEnabled = true
   @Published var placeholder: String?
   @Published var spacing: CGFloat?
@@ -93,21 +135,32 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var sheetContent: BonsaiNativeNode?
   @Published var isSheetPresented = false
   @Published var dismissEventId: Int32?
+  @Published var toolbarItems: [BonsaiNativeToolbarItem] = []
   @Published var padding: EdgeInsets?
   @Published var frameWidth: CGFloat?
   @Published var frameHeight: CGFloat?
   @Published var tabs: [BonsaiNativeTab] = []
   @Published var selectedTabId = ""
   @Published var tabSelectEventId: Int32?
+  @Published var sidebarHeaderAction: BonsaiNativeSidebarAction?
+  @Published var sidebarActions: [BonsaiNativeSidebarAction] = []
+  @Published var sidebarBottomSearchPlaceholder: String?
+  @Published var sidebarBottomSearchText = ""
+  @Published var sidebarBottomSearchEventId: Int32?
+  @Published var sidebarBottomAction: BonsaiNativeSidebarAction?
   @Published var rowSubtitle = ""
   @Published var rowTrailingText = ""
+  @Published var rowContentStyle: Int32 = 0
+  @Published var rowAccessory: Int32 = 0
   @Published var rowTitleStrikethrough = false
+  @Published var rowStaticLeadingSystemImage: String?
   @Published var rowLeadingSystemImage: String?
   @Published var rowLeadingSelectedSystemImage: String?
   @Published var rowLeadingSelected = false
   @Published var rowLeadingAccessibilityLabel = ""
   @Published var rowLeadingEventId: Int32?
   @Published var rowActions: [BonsaiNativeRowAction] = []
+  @Published var rowMenuActions: [BonsaiNativeRowAction] = []
   @Published var sectionTitle = ""
   @Published var pickerSelected = ""
   @Published var pickerEventId: Int32?
@@ -340,10 +393,53 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
   }
 }
 
+private struct BonsaiNativeTextFieldView: View {
+  @ObservedObject var node: BonsaiNativeNode
+  @ObservedObject var model: BonsaiNativeHostModel
+
+  var body: some View {
+    if node.textFieldStyle == 1 {
+      textField
+        .textFieldStyle(.plain)
+        .font(.system(size: 18, weight: .regular))
+        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+        .padding(.horizontal, 16)
+        .background(.bar, in: .rect(cornerRadius: 26, style: .continuous))
+    } else {
+      textField
+        .textFieldStyle(.roundedBorder)
+    }
+  }
+
+  private var textField: some View {
+    TextField(
+      node.placeholder ?? "",
+      text: Binding(
+        get: { node.text },
+        set: { value in
+          node.text = value
+          model.sendChange(node.changeEventId, text: value)
+        }
+      )
+    )
+    .onSubmit {
+      model.sendClick(node.clickEventId)
+    }
+  }
+}
+
 private struct BonsaiNativeNodeView: View {
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @ObservedObject var node: BonsaiNativeNode
   @ObservedObject var model: BonsaiNativeHostModel
+  @State private var isCompactSidebarOpen = false
+  @State private var compactSidebarDragOffset: CGFloat = 0
+  @State private var compactSidebarDragAxis: DragAxis?
+
+  private enum DragAxis {
+    case horizontal
+    case vertical
+  }
 
   var body: some View {
     applyModifiers(to: base)
@@ -365,17 +461,7 @@ private struct BonsaiNativeNodeView: View {
       .disabled(!node.isEnabled)
 
     case .textField:
-      TextField(
-        node.placeholder ?? "",
-        text: Binding(
-          get: { node.text },
-          set: { value in
-            node.text = value
-            model.sendChange(node.changeEventId, text: value)
-          }
-        )
-      )
-      .textFieldStyle(.roundedBorder)
+      BonsaiNativeTextFieldView(node: node, model: model)
 
     case .textEditor:
       ZStack(alignment: .topLeading) {
@@ -415,16 +501,15 @@ private struct BonsaiNativeNodeView: View {
       ScrollView {
         childViews
       }
-      .background(Color(uiColor: .systemGroupedBackground))
+      .background(bonsaiHomeBodyBackground)
 
     case .list:
-      ScrollView {
-        LazyVStack(alignment: .leading, spacing: 0) {
-          childViews
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+      List {
+        childViews
       }
-      .background(Color(uiColor: .systemGroupedBackground))
+      .listStyle(.insetGrouped)
+      .scrollContentBackground(.hidden)
+      .background(bonsaiHomeBodyBackground)
 
     case .navigationStack:
       NavigationStack {
@@ -486,18 +571,13 @@ private struct BonsaiNativeNodeView: View {
   }
 
   private var section: some View {
-    VStack(alignment: .leading, spacing: 0) {
+    Section {
+      childViews
+    } header: {
       if !node.sectionTitle.isEmpty {
         Text(node.sectionTitle)
-          .font(.headline)
-          .foregroundStyle(.secondary)
-          .padding(.horizontal, 16)
-          .padding(.top, 18)
-          .padding(.bottom, 6)
       }
-      childViews
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   private var pickerSelection: Binding<String> {
@@ -575,6 +655,19 @@ private struct BonsaiNativeNodeView: View {
     }
   }
 
+  private var selectedRouteTitle: String {
+    node.tabs.first { tab in
+      tab.id == node.selectedTabId
+    }?.title ?? node.tabs.first?.title ?? sidebarTitle
+  }
+
+  private var selectedRouteToolbarItems: [BonsaiNativeToolbarItem] {
+    guard let selectedRouteIndex, selectedRouteIndex < node.children.count else {
+      return []
+    }
+    return node.children[selectedRouteIndex].toolbarItems
+  }
+
   @ViewBuilder
   private var selectedRouteDetail: some View {
     if let selectedRouteIndex, selectedRouteIndex < node.children.count {
@@ -586,24 +679,368 @@ private struct BonsaiNativeNodeView: View {
     }
   }
 
+  @ViewBuilder
   private var sidebarSplitView: some View {
+    if horizontalSizeClass == .compact {
+      compactSidebarSplitView
+    } else {
+      regularSidebarSplitView
+    }
+  }
+
+  private var regularSidebarSplitView: some View {
     NavigationSplitView {
       List {
-        ForEach(node.tabs) { tab in
+        sidebarRouteButtons
+      }
+      .navigationTitle(sidebarTitle)
+    } detail: {
+      selectedRouteDetail
+    }
+  }
+
+  private var compactSidebarSplitView: some View {
+    GeometryReader { proxy in
+      let revealWidth = proxy.size.width
+      let visibleWidth = compactSidebarVisibleWidth(revealWidth: revealWidth)
+      let progress = revealWidth > 0 ? visibleWidth / revealWidth : 0
+
+      ZStack(alignment: .leading) {
+        bonsaiHomeBodyBackground
+          .ignoresSafeArea()
+
+        compactSidebarContent
+          .frame(width: revealWidth, height: proxy.size.height, alignment: .topLeading)
+          .background(bonsaiHomeBodyBackground.ignoresSafeArea())
+          .opacity(progress)
+
+        VStack(spacing: 0) {
+          compactSidebarTopBar
+
+          selectedRouteDetail
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(width: proxy.size.width, height: proxy.size.height)
+        .background(bonsaiHomeBodyBackground)
+        .offset(x: visibleWidth)
+        .disabled(isCompactSidebarOpen)
+        .clipShape(RoundedRectangle(cornerRadius: 28 * progress, style: .continuous))
+
+        if isCompactSidebarOpen {
+          Color.clear
+            .frame(width: max(0, proxy.size.width - visibleWidth), height: proxy.size.height)
+            .contentShape(Rectangle())
+            .offset(x: visibleWidth)
+            .onTapGesture {
+              setCompactSidebarOpen(false)
+            }
+        }
+      }
+      .frame(width: proxy.size.width, height: proxy.size.height)
+      .clipped()
+      .contentShape(Rectangle())
+      .simultaneousGesture(
+        DragGesture(minimumDistance: 16, coordinateSpace: .global)
+          .onChanged { value in
+            handleCompactSidebarDragChanged(value, revealWidth: revealWidth)
+          }
+          .onEnded { value in
+            handleCompactSidebarDragEnded(value, revealWidth: revealWidth)
+          }
+      )
+    }
+  }
+
+  private var compactSidebarContent: some View {
+    VStack(alignment: .leading, spacing: 22) {
+      HStack(alignment: .center) {
+        Text(sidebarTitle)
+          .font(.title2.weight(.bold))
+        Spacer()
+        sidebarHeaderActionButton
+      }
+
+      VStack(alignment: .leading, spacing: 8) {
+        sidebarRouteButtons
+      }
+
+      Spacer()
+
+      sidebarBottomControls
+    }
+    .padding(.top, 62)
+    .padding(.horizontal, 24)
+    .frame(maxHeight: .infinity, alignment: .topLeading)
+  }
+
+  private func compactSidebarVisibleWidth(revealWidth: CGFloat) -> CGFloat {
+    max(0, min(revealWidth, (isCompactSidebarOpen ? revealWidth : 0) + compactSidebarDragOffset))
+  }
+
+  private func setCompactSidebarOpen(_ isOpen: Bool) {
+    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+      isCompactSidebarOpen = isOpen
+      compactSidebarDragOffset = 0
+      compactSidebarDragAxis = nil
+    }
+  }
+
+  private func handleCompactSidebarDragChanged(
+    _ value: DragGesture.Value,
+    revealWidth: CGFloat
+  ) {
+    let horizontal = value.translation.width
+    let vertical = value.translation.height
+    if compactSidebarDragAxis == nil, abs(horizontal) > 5 || abs(vertical) > 5 {
+      compactSidebarDragAxis = abs(horizontal) >= abs(vertical) ? .horizontal : .vertical
+    }
+    guard compactSidebarDragAxis == .horizontal else { return }
+    let baseWidth = isCompactSidebarOpen ? revealWidth : 0
+    compactSidebarDragOffset = max(-baseWidth, min(revealWidth - baseWidth, horizontal))
+  }
+
+  private func handleCompactSidebarDragEnded(
+    _ value: DragGesture.Value,
+    revealWidth: CGFloat
+  ) {
+    defer {
+      compactSidebarDragAxis = nil
+    }
+    guard compactSidebarDragAxis == .horizontal else {
+      compactSidebarDragOffset = 0
+      return
+    }
+    let visibleWidth = compactSidebarVisibleWidth(revealWidth: revealWidth)
+    let shouldOpen =
+      value.predictedEndTranslation.width > 70
+      || visibleWidth > revealWidth * 0.35
+    setCompactSidebarOpen(shouldOpen)
+  }
+
+  private var compactSidebarTopBar: some View {
+    HStack {
+      Button {
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+          isCompactSidebarOpen = true
+        }
+      } label: {
+        VStack(alignment: .leading, spacing: 7) {
+          Capsule()
+            .fill(Color.primary)
+            .frame(width: 22, height: 2.2)
+          Capsule()
+            .fill(Color.primary)
+            .frame(width: 17, height: 2.2)
+        }
+        .modifier(BonsaiHeaderIconChrome())
+      }
+      .buttonStyle(.plain)
+
+      Spacer()
+
+      Text(selectedRouteTitle)
+        .font(.title3.weight(.semibold))
+        .lineLimit(1)
+
+      Spacer()
+
+      compactToolbarItems
+    }
+    .padding(.horizontal, 22)
+    .padding(.top, 8)
+    .padding(.bottom, 24)
+    .background(bonsaiHomeBodyBackground)
+    .allowsHitTesting(!isCompactSidebarOpen)
+  }
+
+  private var compactToolbarItems: some View {
+    HStack(spacing: 8) {
+      ForEach(selectedRouteToolbarItems) { item in
+        if item.menuActions.isEmpty {
           Button {
-            node.selectedTabId = tab.id
-            model.sendChange(node.tabSelectEventId, text: tab.id)
+            if let eventId = item.eventId {
+              model.sendClick(eventId)
+            }
           } label: {
-            Label(tab.title, systemImage: tab.systemImage ?? "circle")
-              .fontWeight(tab.id == node.selectedTabId ? .semibold : .regular)
+            toolbarItemLabel(item)
+          }
+          .buttonStyle(.plain)
+        } else {
+          Menu {
+            ForEach(item.menuActions) { action in
+              Button(role: action.style == 1 ? .destructive : nil) {
+                model.sendClick(action.eventId)
+              } label: {
+                if let systemImage = action.systemImage {
+                  Label(action.title, systemImage: systemImage)
+                } else {
+                  Text(action.title)
+                }
+              }
+            }
+          } label: {
+            toolbarItemLabel(item)
           }
           .buttonStyle(.plain)
         }
       }
-      .navigationTitle("Todos")
-    } detail: {
-      selectedRouteDetail
     }
+    .frame(minWidth: 56, minHeight: 56, alignment: .trailing)
+  }
+
+  private func toolbarItemLabel(_ item: BonsaiNativeToolbarItem) -> some View {
+    Group {
+      if let systemImage = item.systemImage {
+        Image(systemName: systemImage)
+          .font(.system(size: 16, weight: .semibold))
+          .modifier(BonsaiHeaderIconChrome())
+      } else {
+        Text(item.title)
+          .font(.body.weight(.semibold))
+          .modifier(BonsaiHeaderIconChrome())
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var sidebarRouteButtons: some View {
+    if node.sidebarActions.isEmpty {
+      ForEach(node.tabs) { tab in
+        Button {
+          node.selectedTabId = tab.id
+          model.sendChange(node.tabSelectEventId, text: tab.id)
+          withAnimation(.easeOut(duration: 0.18)) {
+            isCompactSidebarOpen = false
+          }
+        } label: {
+          sidebarRowLabel(
+            title: tab.title,
+            systemImage: tab.systemImage,
+            isSelected: tab.id == node.selectedTabId
+          )
+        }
+        .buttonStyle(.plain)
+      }
+    } else {
+      ForEach(node.sidebarActions) { action in
+        Button {
+          if let eventId = action.eventId {
+            model.sendClick(eventId)
+          }
+          withAnimation(.easeOut(duration: 0.18)) {
+            isCompactSidebarOpen = false
+          }
+        } label: {
+          sidebarRowLabel(
+            title: action.title,
+            systemImage: action.systemImage,
+            isSelected: action.id == node.selectedTabId
+          )
+        }
+        .buttonStyle(.plain)
+      }
+    }
+  }
+
+  private func sidebarRowLabel(title: String, systemImage: String?, isSelected: Bool) -> some View {
+    Label(title, systemImage: systemImage ?? "circle")
+      .font(.body.weight(isSelected ? .semibold : .regular))
+      .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+      .padding(.horizontal, 12)
+      .background(
+        isSelected
+          ? Color(uiColor: .tertiarySystemFill)
+          : Color.clear,
+        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+      )
+  }
+
+  @ViewBuilder
+  private var sidebarHeaderActionButton: some View {
+    if let action = node.sidebarHeaderAction {
+      Button {
+        if let eventId = action.eventId {
+          model.sendClick(eventId)
+        }
+        withAnimation(.easeOut(duration: 0.18)) {
+          isCompactSidebarOpen = false
+        }
+      } label: {
+        Image(systemName: action.systemImage ?? "person.crop.circle")
+          .font(.headline.weight(.semibold))
+          .frame(width: 44, height: 44)
+      }
+      .buttonStyle(.plain)
+      .background(.thinMaterial, in: Circle())
+      .accessibilityLabel(action.title)
+    } else {
+      Button {
+        withAnimation(.easeOut(duration: 0.18)) {
+          isCompactSidebarOpen = false
+        }
+      } label: {
+        Image(systemName: "xmark")
+          .font(.headline.weight(.semibold))
+          .frame(width: 40, height: 40)
+      }
+      .buttonStyle(.plain)
+    }
+  }
+
+  @ViewBuilder
+  private var sidebarBottomControls: some View {
+    if node.sidebarBottomSearchPlaceholder != nil || node.sidebarBottomAction != nil {
+      HStack(spacing: 12) {
+        if let placeholder = node.sidebarBottomSearchPlaceholder {
+          HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+              .font(.body.weight(.medium))
+              .foregroundStyle(.secondary)
+            TextField(
+              placeholder,
+              text: Binding(
+                get: { node.sidebarBottomSearchText },
+                set: { value in
+                  node.sidebarBottomSearchText = value
+                  model.sendChange(node.sidebarBottomSearchEventId, text: value)
+                }
+              )
+            )
+              .textFieldStyle(.plain)
+          }
+          .padding(.horizontal, 16)
+          .frame(maxWidth: .infinity)
+          .frame(height: 52)
+          .background(.thinMaterial, in: Capsule())
+        }
+
+        if let action = node.sidebarBottomAction {
+          Button {
+            if let eventId = action.eventId {
+              model.sendClick(eventId)
+            }
+            withAnimation(.easeOut(duration: 0.18)) {
+              isCompactSidebarOpen = false
+            }
+          } label: {
+            Label(action.title, systemImage: action.systemImage ?? "square.and.pencil")
+              .font(.body.weight(.semibold))
+              .foregroundStyle(.white)
+              .padding(.horizontal, 22)
+              .frame(height: 52)
+          }
+          .buttonStyle(.plain)
+          .background(Color.black, in: Capsule())
+        }
+      }
+      .padding(.bottom, 8)
+    }
+  }
+
+  private var sidebarTitle: String {
+    Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+      ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+      ?? "Menu"
   }
 
   @ViewBuilder
@@ -720,118 +1157,150 @@ private struct BonsaiNativeNodeView: View {
 private struct BonsaiNativeListRowView: View {
   @ObservedObject var node: BonsaiNativeNode
   @ObservedObject var model: BonsaiNativeHostModel
-  @State private var offset: CGFloat = 0
-
-  private let actionWidth: CGFloat = 82
-
-  private var maxOffset: CGFloat {
-    -CGFloat(node.rowActions.count) * actionWidth
-  }
 
   var body: some View {
-    ZStack(alignment: .trailing) {
-      actionButtons
-
-      rowContent
-        .background(Color(uiColor: .systemGroupedBackground))
-        .offset(x: offset)
-        .gesture(
-          DragGesture(minimumDistance: 12, coordinateSpace: .local)
-            .onChanged { value in
-              guard abs(value.translation.width) > abs(value.translation.height) else {
-                return
-              }
-              let proposed = value.translation.width
-              offset = min(0, max(maxOffset, proposed))
-            }
-            .onEnded { value in
-              guard !node.rowActions.isEmpty else {
-                offset = 0
-                return
-              }
-              let shouldOpen = value.translation.width < -40
-              withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
-                offset = shouldOpen ? maxOffset : 0
-              }
-            }
-        )
-    }
-    .clipped()
-  }
-
-  private var actionButtons: some View {
-    HStack(spacing: 0) {
-      ForEach(node.rowActions) { action in
-        actionButton(for: action)
+    rowContent
+      .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+        rowSwipeButtons
       }
-    }
   }
 
-  private func actionButton(for action: BonsaiNativeRowAction) -> some View {
-    Button {
-      withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
-        offset = 0
-      }
-      model.sendClick(action.eventId)
-    } label: {
-      actionLabel(for: action)
-    }
-    .buttonStyle(.plain)
-  }
-
-  private func actionLabel(for action: BonsaiNativeRowAction) -> some View {
-    VStack(spacing: 4) {
-      if let systemImage = action.systemImage {
-        Image(systemName: systemImage)
-      }
-      Text(action.title)
-        .font(.caption2)
-    }
-    .frame(width: actionWidth)
-    .frame(minHeight: 71)
-    .foregroundStyle(.white)
-    .background(action.style == 1 ? Color.red : Color.blue)
-  }
-
+  @ViewBuilder
   private var rowContent: some View {
-    VStack(spacing: 0) {
-      HStack(spacing: 14) {
-        if let leadingImage = node.rowLeadingSystemImage {
-          Button {
-            withAnimation(.spring(response: 0.26, dampingFraction: 0.78)) {
-              model.sendClick(node.rowLeadingEventId)
-            }
-          } label: {
-            Image(
-              systemName: node.rowLeadingSelected
-                ? (node.rowLeadingSelectedSystemImage ?? leadingImage)
-                : leadingImage
-            )
-              .font(.system(size: 25, weight: .regular))
-              .symbolRenderingMode(.hierarchical)
-              .foregroundStyle(
-                node.rowLeadingSelected
-                  ? Color.green
-                  : Color.secondary.opacity(0.35)
-              )
-              .frame(width: 32, height: 32)
-              .contentShape(.rect)
-          }
-          .buttonStyle(.plain)
-          .accessibilityLabel(node.rowLeadingAccessibilityLabel)
+    if node.rowMenuActions.isEmpty {
+      rowBody
+        .contentShape(.rect)
+        .onTapGesture {
+          model.sendClick(node.clickEventId)
         }
-
-        rowMainContent
+    } else {
+      Menu {
+        rowMenuButtons
+      } label: {
+        rowBody
       }
-      .frame(minHeight: 71)
-
-      Divider()
-        .padding(.leading, node.rowLeadingSystemImage == nil ? 0 : 46)
+      .buttonStyle(.plain)
     }
-    .padding(.horizontal, 16)
+  }
+
+  private var rowBody: some View {
+    HStack(spacing: 14) {
+      if let leadingImage = node.rowLeadingSystemImage {
+        Button {
+          withAnimation(.spring(response: 0.26, dampingFraction: 0.78)) {
+            model.sendClick(node.rowLeadingEventId)
+          }
+        } label: {
+          Image(
+            systemName: node.rowLeadingSelected
+              ? (node.rowLeadingSelectedSystemImage ?? leadingImage)
+              : leadingImage
+          )
+          .font(.system(size: 25, weight: .regular))
+          .symbolRenderingMode(.hierarchical)
+          .foregroundStyle(
+            node.rowLeadingSelected
+              ? Color.green
+              : Color.secondary.opacity(0.35)
+          )
+          .frame(width: 32, height: 32)
+          .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(node.rowLeadingAccessibilityLabel)
+      } else if let leadingImage = node.rowStaticLeadingSystemImage {
+        Image(systemName: leadingImage)
+          .font(.system(size: 21, weight: .regular))
+          .symbolRenderingMode(.hierarchical)
+          .foregroundStyle(Color.accentColor)
+          .frame(width: 32, height: 32)
+      }
+
+      rowMainContent
+    }
+    .padding(.vertical, node.rowContentStyle == 2 ? 4 : 0)
+  }
+
+  @ViewBuilder
+  private var rowSwipeButtons: some View {
+    ForEach(node.rowActions) { action in
+      Button(role: action.style == 1 ? .destructive : nil) {
+        model.sendClick(action.eventId)
+      } label: {
+        if let systemImage = action.systemImage {
+          Label(action.title, systemImage: systemImage)
+        } else {
+          Text(action.title)
+        }
+      }
+      .tint(action.style == 1 ? .red : .blue)
+    }
+  }
+
+  @ViewBuilder
+  private var rowMenuButtons: some View {
+    ForEach(node.rowMenuActions) { action in
+      Button(role: action.style == 1 ? .destructive : nil) {
+        model.sendClick(action.eventId)
+      } label: {
+        if let systemImage = action.systemImage {
+          Label(action.title, systemImage: systemImage)
+        } else {
+          Text(action.title)
+        }
+      }
+    }
   }
 
   private var rowMainContent: some View {
+    Group {
+      if node.rowContentStyle == 1 {
+        deckPreviewRowMainContent
+      } else if node.rowContentStyle == 2 {
+        cardPreviewRowMainContent
+      } else {
+        standardRowMainContent
+      }
+    }
+  }
+
+  private var deckPreviewRowMainContent: some View {
+    HStack(spacing: 12) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text(node.text)
+          .font(.headline)
+          .foregroundStyle(node.rowTitleStrikethrough ? .secondary : .primary)
+          .strikethrough(node.rowTitleStrikethrough, color: .secondary)
+        if !node.rowSubtitle.isEmpty {
+          Text(node.rowSubtitle)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+      .layoutPriority(1)
+
+      Spacer(minLength: 12)
+
+      rowAccessoryView
+    }
+  }
+
+  private var cardPreviewRowMainContent: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text(node.text)
+        .font(.headline)
+        .foregroundStyle(node.rowTitleStrikethrough ? .secondary : .primary)
+        .strikethrough(node.rowTitleStrikethrough, color: .secondary)
+      if !node.rowSubtitle.isEmpty {
+        Text(node.rowSubtitle)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private var standardRowMainContent: some View {
     HStack(spacing: 14) {
       VStack(alignment: .leading, spacing: 3) {
         Text(node.text)
@@ -858,10 +1327,17 @@ private struct BonsaiNativeListRowView: View {
           .fixedSize(horizontal: true, vertical: false)
           .layoutPriority(2)
       }
+
+      rowAccessoryView
     }
-    .contentShape(.rect)
-    .onTapGesture {
-      model.sendClick(node.clickEventId)
+  }
+
+  @ViewBuilder
+  private var rowAccessoryView: some View {
+    if node.rowAccessory == 1 {
+      Image(systemName: "chevron.right")
+        .font(.system(size: 22, weight: .semibold))
+        .foregroundStyle(.tertiary)
     }
   }
 }
@@ -1245,6 +1721,15 @@ public func bonsai_native_swiftui_set_placeholder(
   node.placeholder = textPointer.map(String.init(cString:))
 }
 
+@_cdecl("bonsai_native_swiftui_set_text_field_style")
+public func bonsai_native_swiftui_set_text_field_style(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ style: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.textFieldStyle = style
+}
+
 @_cdecl("bonsai_native_swiftui_set_spacing")
 public func bonsai_native_swiftui_set_spacing(
   _ pointer: UnsafeMutableRawPointer?,
@@ -1305,6 +1790,24 @@ public func bonsai_native_swiftui_set_list_row_trailing_text(
   node.rowTrailingText = trailingTextPointer.map(String.init(cString:)) ?? ""
 }
 
+@_cdecl("bonsai_native_swiftui_set_list_row_content_style")
+public func bonsai_native_swiftui_set_list_row_content_style(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ contentStyle: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.rowContentStyle = contentStyle
+}
+
+@_cdecl("bonsai_native_swiftui_set_list_row_accessory")
+public func bonsai_native_swiftui_set_list_row_accessory(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ accessory: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.rowAccessory = accessory
+}
+
 @_cdecl("bonsai_native_swiftui_set_list_row_title_strikethrough")
 public func bonsai_native_swiftui_set_list_row_title_strikethrough(
   _ pointer: UnsafeMutableRawPointer?,
@@ -1312,6 +1815,15 @@ public func bonsai_native_swiftui_set_list_row_title_strikethrough(
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.rowTitleStrikethrough = titleStrikethrough
+}
+
+@_cdecl("bonsai_native_swiftui_set_list_row_leading_system_image")
+public func bonsai_native_swiftui_set_list_row_leading_system_image(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ systemImagePointer: UnsafePointer<CChar>?
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.rowStaticLeadingSystemImage = systemImagePointer.map(String.init(cString:))
 }
 
 @_cdecl("bonsai_native_swiftui_set_list_row_leading")
@@ -1433,6 +1945,31 @@ public func bonsai_native_swiftui_append_list_row_action(
   )
 }
 
+@_cdecl("bonsai_native_swiftui_clear_list_row_menu_actions")
+public func bonsai_native_swiftui_clear_list_row_menu_actions(_ pointer: UnsafeMutableRawPointer?) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.rowMenuActions = []
+}
+
+@_cdecl("bonsai_native_swiftui_append_list_row_menu_action")
+public func bonsai_native_swiftui_append_list_row_menu_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ style: Int32,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer), let titlePointer else { return }
+  node.rowMenuActions.append(
+    BonsaiNativeRowAction(
+      title: String(cString: titlePointer),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      style: style,
+      eventId: eventId < 0 ? nil : eventId
+    )
+  )
+}
+
 @_cdecl("bonsai_native_swiftui_set_searchable")
 public func bonsai_native_swiftui_set_searchable(
   _ pointer: UnsafeMutableRawPointer?,
@@ -1456,6 +1993,58 @@ public func bonsai_native_swiftui_set_sheet(
   node.sheetContent = nativeNode(from: contentPointer)
   node.isSheetPresented = isPresented
   node.dismissEventId = dismissEventId < 0 ? nil : dismissEventId
+}
+
+@_cdecl("bonsai_native_swiftui_clear_toolbar")
+public func bonsai_native_swiftui_clear_toolbar(_ pointer: UnsafeMutableRawPointer?) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.toolbarItems = []
+}
+
+@_cdecl("bonsai_native_swiftui_append_toolbar_item")
+public func bonsai_native_swiftui_append_toolbar_item(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer),
+        let idPointer,
+        let titlePointer else { return }
+  node.toolbarItems.append(
+    BonsaiNativeToolbarItem(
+      id: String(cString: idPointer),
+      title: String(cString: titlePointer),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      eventId: eventId < 0 ? nil : eventId,
+      menuActions: []
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_append_toolbar_menu_action")
+public func bonsai_native_swiftui_append_toolbar_menu_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ itemIdPointer: UnsafePointer<CChar>?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ style: Int32,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer),
+        let itemIdPointer,
+        let titlePointer else { return }
+  let itemId = String(cString: itemIdPointer)
+  guard let index = node.toolbarItems.firstIndex(where: { $0.id == itemId }) else { return }
+  node.toolbarItems[index].menuActions.append(
+    BonsaiNativeRowAction(
+      title: String(cString: titlePointer),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      style: style,
+      eventId: eventId < 0 ? nil : eventId
+    )
+  )
 }
 
 @_cdecl("bonsai_native_swiftui_clear_tabs")
@@ -1486,6 +2075,83 @@ public func bonsai_native_swiftui_append_tab(
       systemImage: systemImagePointer.map(String.init(cString:)),
       role: role
     )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_clear_sidebar_shell")
+public func bonsai_native_swiftui_clear_sidebar_shell(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ bottomSearchPlaceholderPointer: UnsafePointer<CChar>?,
+  _ bottomSearchTextPointer: UnsafePointer<CChar>?,
+  _ bottomSearchEventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.sidebarHeaderAction = nil
+  node.sidebarActions = []
+  node.sidebarBottomSearchPlaceholder = bottomSearchPlaceholderPointer.map(String.init(cString:))
+  node.sidebarBottomSearchText = bottomSearchTextPointer.map(String.init(cString:)) ?? ""
+  node.sidebarBottomSearchEventId = bottomSearchEventId >= 0 ? bottomSearchEventId : nil
+  node.sidebarBottomAction = nil
+}
+
+@_cdecl("bonsai_native_swiftui_set_sidebar_header_action")
+public func bonsai_native_swiftui_set_sidebar_header_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ headerActionIdPointer: UnsafePointer<CChar>?,
+  _ headerActionTitlePointer: UnsafePointer<CChar>?,
+  _ headerActionSystemImagePointer: UnsafePointer<CChar>?,
+  _ headerActionEventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  if let headerActionIdPointer, let headerActionTitlePointer {
+    node.sidebarHeaderAction = BonsaiNativeSidebarAction(
+      id: String(cString: headerActionIdPointer),
+      title: String(cString: headerActionTitlePointer),
+      systemImage: headerActionSystemImagePointer.map(String.init(cString:)),
+      eventId: headerActionEventId < 0 ? nil : headerActionEventId
+    )
+  } else {
+    node.sidebarHeaderAction = nil
+  }
+}
+
+@_cdecl("bonsai_native_swiftui_append_sidebar_action")
+public func bonsai_native_swiftui_append_sidebar_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer), let idPointer, let titlePointer else { return }
+  node.sidebarActions.append(
+    BonsaiNativeSidebarAction(
+      id: String(cString: idPointer),
+      title: String(cString: titlePointer),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      eventId: eventId < 0 ? nil : eventId
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_set_sidebar_bottom_action")
+public func bonsai_native_swiftui_set_sidebar_bottom_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  guard let idPointer, let titlePointer else {
+    node.sidebarBottomAction = nil
+    return
+  }
+  node.sidebarBottomAction = BonsaiNativeSidebarAction(
+    id: String(cString: idPointer),
+    title: String(cString: titlePointer),
+    systemImage: systemImagePointer.map(String.init(cString:)),
+    eventId: eventId < 0 ? nil : eventId
   )
 }
 

@@ -49,6 +49,13 @@ private struct BonsaiNativeTab: Identifiable {
   let role: Int32
 }
 
+private struct BonsaiNativeSidebarAction: Identifiable {
+  let id: String
+  let title: String
+  let systemImage: String?
+  let eventId: Int32?
+}
+
 private struct BonsaiNativePickerOption: Identifiable {
   let id: String
   let title: String
@@ -62,6 +69,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var textStyle: Int32 = 5
   @Published var textWeight: Int32 = 0
   @Published var textColor: Int32 = 0
+  @Published var textFieldStyle: Int32 = 0
   @Published var isEnabled = true
   @Published var placeholder: String?
   @Published var spacing: CGFloat?
@@ -80,15 +88,25 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var tabs: [BonsaiNativeTab] = []
   @Published var selectedTabId = ""
   @Published var tabSelectEventId: Int32?
+  @Published var sidebarHeaderAction: BonsaiNativeSidebarAction?
+  @Published var sidebarActions: [BonsaiNativeSidebarAction] = []
+  @Published var sidebarBottomSearchPlaceholder: String?
+  @Published var sidebarBottomSearchText = ""
+  @Published var sidebarBottomSearchEventId: Int32?
+  @Published var sidebarBottomAction: BonsaiNativeSidebarAction?
   @Published var rowSubtitle = ""
   @Published var rowTrailingText = ""
+  @Published var rowContentStyle: Int32 = 0
+  @Published var rowAccessory: Int32 = 0
   @Published var rowTitleStrikethrough = false
+  @Published var rowStaticLeadingSystemImage: String?
   @Published var rowLeadingSystemImage: String?
   @Published var rowLeadingSelectedSystemImage: String?
   @Published var rowLeadingSelected = false
   @Published var rowLeadingAccessibilityLabel = ""
   @Published var rowLeadingEventId: Int32?
   @Published var rowActions: [BonsaiNativeRowAction] = []
+  @Published var rowMenuActions: [BonsaiNativeRowAction] = []
   @Published var sectionTitle = ""
   @Published var pickerSelected = ""
   @Published var pickerEventId: Int32?
@@ -321,6 +339,9 @@ private struct BonsaiNativeNodeView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(node.rowLeadingAccessibilityLabel)
+      } else if let leading = node.rowStaticLeadingSystemImage {
+        Image(systemName: leading)
+          .frame(width: 24, height: 24)
       }
       listRowMainContent
     }
@@ -336,25 +357,74 @@ private struct BonsaiNativeNodeView: View {
           }
         }
       }
+      ForEach(node.rowMenuActions) { action in
+        Button(role: action.style == 1 ? .destructive : nil) {
+          model.sendClick(action.eventId)
+        } label: {
+          if let image = action.systemImage {
+            Label(action.title, systemImage: image)
+          } else {
+            Text(action.title)
+          }
+        }
+      }
     }
   }
 
   @ViewBuilder
   private var listRowMainContent: some View {
-    let content = HStack(spacing: 10) {
-      VStack(alignment: .leading, spacing: 2) {
-        Text(node.text)
-          .strikethrough(node.rowTitleStrikethrough)
-        if !node.rowSubtitle.isEmpty {
-          Text(node.rowSubtitle)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+    let content = Group {
+      if node.rowContentStyle == 1 {
+        HStack(spacing: 12) {
+          VStack(alignment: .leading, spacing: 4) {
+            Text(node.text)
+              .font(.headline)
+              .strikethrough(node.rowTitleStrikethrough)
+            if !node.rowSubtitle.isEmpty {
+              Text(node.rowSubtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+          Spacer()
+          if node.rowAccessory == 1 {
+            Image(systemName: "chevron.right")
+              .foregroundStyle(.tertiary)
+          }
         }
-      }
-      Spacer()
-      if !node.rowTrailingText.isEmpty {
-        Text(node.rowTrailingText)
-          .foregroundStyle(.secondary)
+      } else if node.rowContentStyle == 2 {
+        VStack(alignment: .leading, spacing: 6) {
+          Text(node.text)
+            .font(.headline)
+            .strikethrough(node.rowTitleStrikethrough)
+          if !node.rowSubtitle.isEmpty {
+            Text(node.rowSubtitle)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      } else {
+        HStack(spacing: 10) {
+          VStack(alignment: .leading, spacing: 2) {
+            Text(node.text)
+              .strikethrough(node.rowTitleStrikethrough)
+            if !node.rowSubtitle.isEmpty {
+              Text(node.rowSubtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+          Spacer()
+          if !node.rowTrailingText.isEmpty {
+            Text(node.rowTrailingText)
+              .foregroundStyle(.secondary)
+          }
+          if node.rowAccessory == 1 {
+            Image(systemName: "chevron.right")
+              .foregroundStyle(.tertiary)
+          }
+        }
       }
     }
 
@@ -517,6 +587,11 @@ public func bonsai_native_swiftui_set_placeholder(_ pointer: UnsafeMutableRawPoi
   nativeNode(from: pointer)?.placeholder = textPointer.map(String.init(cString:))
 }
 
+@_cdecl("bonsai_native_swiftui_set_text_field_style")
+public func bonsai_native_swiftui_set_text_field_style(_ pointer: UnsafeMutableRawPointer?, _ style: Int32) {
+  nativeNode(from: pointer)?.textFieldStyle = style
+}
+
 @_cdecl("bonsai_native_swiftui_set_spacing")
 public func bonsai_native_swiftui_set_spacing(_ pointer: UnsafeMutableRawPointer?, _ spacing: Double) {
   nativeNode(from: pointer)?.spacing = spacing < 0 ? nil : CGFloat(spacing)
@@ -555,9 +630,24 @@ public func bonsai_native_swiftui_set_list_row_trailing_text(_ pointer: UnsafeMu
   nativeNode(from: pointer)?.rowTrailingText = trailingTextPointer.map(String.init(cString:)) ?? ""
 }
 
+@_cdecl("bonsai_native_swiftui_set_list_row_content_style")
+public func bonsai_native_swiftui_set_list_row_content_style(_ pointer: UnsafeMutableRawPointer?, _ contentStyle: Int32) {
+  nativeNode(from: pointer)?.rowContentStyle = contentStyle
+}
+
+@_cdecl("bonsai_native_swiftui_set_list_row_accessory")
+public func bonsai_native_swiftui_set_list_row_accessory(_ pointer: UnsafeMutableRawPointer?, _ accessory: Int32) {
+  nativeNode(from: pointer)?.rowAccessory = accessory
+}
+
 @_cdecl("bonsai_native_swiftui_set_list_row_title_strikethrough")
 public func bonsai_native_swiftui_set_list_row_title_strikethrough(_ pointer: UnsafeMutableRawPointer?, _ value: Bool) {
   nativeNode(from: pointer)?.rowTitleStrikethrough = value
+}
+
+@_cdecl("bonsai_native_swiftui_set_list_row_leading_system_image")
+public func bonsai_native_swiftui_set_list_row_leading_system_image(_ pointer: UnsafeMutableRawPointer?, _ systemImagePointer: UnsafePointer<CChar>?) {
+  nativeNode(from: pointer)?.rowStaticLeadingSystemImage = systemImagePointer.map(String.init(cString:))
 }
 
 @_cdecl("bonsai_native_swiftui_set_list_row_leading")
@@ -598,6 +688,30 @@ public func bonsai_native_swiftui_append_list_row_action(
 ) {
   guard let node = nativeNode(from: pointer), let titlePointer else { return }
   node.rowActions.append(
+    BonsaiNativeRowAction(
+      title: String(cString: titlePointer),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      style: style,
+      eventId: eventId < 0 ? nil : eventId
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_clear_list_row_menu_actions")
+public func bonsai_native_swiftui_clear_list_row_menu_actions(_ pointer: UnsafeMutableRawPointer?) {
+  nativeNode(from: pointer)?.rowMenuActions = []
+}
+
+@_cdecl("bonsai_native_swiftui_append_list_row_menu_action")
+public func bonsai_native_swiftui_append_list_row_menu_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ style: Int32,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer), let titlePointer else { return }
+  node.rowMenuActions.append(
     BonsaiNativeRowAction(
       title: String(cString: titlePointer),
       systemImage: systemImagePointer.map(String.init(cString:)),
@@ -667,6 +781,83 @@ public func bonsai_native_swiftui_append_tab(
       systemImage: systemImagePointer.map(String.init(cString:)),
       role: role
     )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_clear_sidebar_shell")
+public func bonsai_native_swiftui_clear_sidebar_shell(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ bottomSearchPlaceholderPointer: UnsafePointer<CChar>?,
+  _ bottomSearchTextPointer: UnsafePointer<CChar>?,
+  _ bottomSearchEventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.sidebarHeaderAction = nil
+  node.sidebarActions = []
+  node.sidebarBottomSearchPlaceholder = bottomSearchPlaceholderPointer.map(String.init(cString:))
+  node.sidebarBottomSearchText = bottomSearchTextPointer.map(String.init(cString:)) ?? ""
+  node.sidebarBottomSearchEventId = bottomSearchEventId >= 0 ? bottomSearchEventId : nil
+  node.sidebarBottomAction = nil
+}
+
+@_cdecl("bonsai_native_swiftui_set_sidebar_header_action")
+public func bonsai_native_swiftui_set_sidebar_header_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ headerActionIdPointer: UnsafePointer<CChar>?,
+  _ headerActionTitlePointer: UnsafePointer<CChar>?,
+  _ headerActionSystemImagePointer: UnsafePointer<CChar>?,
+  _ headerActionEventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  if let headerActionIdPointer, let headerActionTitlePointer {
+    node.sidebarHeaderAction = BonsaiNativeSidebarAction(
+      id: String(cString: headerActionIdPointer),
+      title: String(cString: headerActionTitlePointer),
+      systemImage: headerActionSystemImagePointer.map(String.init(cString:)),
+      eventId: headerActionEventId < 0 ? nil : headerActionEventId
+    )
+  } else {
+    node.sidebarHeaderAction = nil
+  }
+}
+
+@_cdecl("bonsai_native_swiftui_append_sidebar_action")
+public func bonsai_native_swiftui_append_sidebar_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer), let idPointer, let titlePointer else { return }
+  node.sidebarActions.append(
+    BonsaiNativeSidebarAction(
+      id: String(cString: idPointer),
+      title: String(cString: titlePointer),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      eventId: eventId < 0 ? nil : eventId
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_set_sidebar_bottom_action")
+public func bonsai_native_swiftui_set_sidebar_bottom_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  guard let idPointer, let titlePointer else {
+    node.sidebarBottomAction = nil
+    return
+  }
+  node.sidebarBottomAction = BonsaiNativeSidebarAction(
+    id: String(cString: idPointer),
+    title: String(cString: titlePointer),
+    systemImage: systemImagePointer.map(String.init(cString:)),
+    eventId: eventId < 0 ? nil : eventId
   )
 }
 

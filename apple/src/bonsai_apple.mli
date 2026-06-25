@@ -16,10 +16,24 @@ type frame =
   }
 [@@deriving sexp_of]
 
+type row_action_style =
+  | Default
+  | Destructive
+[@@deriving sexp_of]
+
+type toolbar_menu_action =
+  { title : string
+  ; system_image : string option
+  ; style : row_action_style
+  ; on_click : unit Effect.t
+  }
+
 type toolbar_item =
   { id : string
   ; title : string
+  ; system_image : string option
   ; on_click : unit Effect.t
+  ; menu_actions : toolbar_menu_action list
   }
 
 type text_style =
@@ -48,16 +62,16 @@ type text_color =
   | Tertiary
 [@@deriving sexp_of]
 
+type text_field_style =
+  | Rounded_border
+  | Pill
+[@@deriving sexp_of]
+
 type text_attributes =
   { style : text_style
   ; weight : text_weight
   ; color : text_color
   }
-[@@deriving sexp_of]
-
-type row_action_style =
-  | Default
-  | Destructive
 [@@deriving sexp_of]
 
 type row_leading_button =
@@ -74,6 +88,17 @@ type row_action =
   ; style : row_action_style
   ; on_click : unit Effect.t
   }
+
+type list_row_content_style =
+  | Standard
+  | Deck_preview
+  | Card_preview
+[@@deriving sexp_of, equal]
+
+type list_row_accessory =
+  | No_accessory
+  | Disclosure_indicator
+[@@deriving sexp_of, equal]
 
 type picker_option =
   { id : string
@@ -102,15 +127,20 @@ type list_row =
   { title : string
   ; subtitle : string option
   ; trailing_text : string option
+  ; leading_system_image : string option
+  ; content_style : list_row_content_style
+  ; accessory : list_row_accessory
   ; title_strikethrough : bool
   ; on_click : unit Effect.t option
   ; leading_button : row_leading_button option
   ; swipe_actions : row_action list
+  ; menu_actions : row_action list
   }
 
 type tab_role = Search [@@deriving sexp_of]
 
 type tab
+type sidebar_action
 
 type rendered_tab =
   { id : string
@@ -119,6 +149,13 @@ type rendered_tab =
   ; role : tab_role option
   }
 [@@deriving sexp_of]
+
+type rendered_sidebar_action =
+  { id : string
+  ; title : string
+  ; system_image : string option
+  ; on_click : unit -> unit
+  }
 
 type node
 
@@ -132,6 +169,8 @@ val text
 val button : ?is_enabled:bool -> string -> on_click:unit Effect.t -> node
 val text_field
   :  ?placeholder:string
+  -> ?style:text_field_style
+  -> ?on_submit:unit Effect.t
   -> text:string
   -> on_change:(string -> unit Effect.t)
   -> unit
@@ -161,7 +200,24 @@ val navigation_split : sidebar:node -> content:node -> detail:node -> node
 val adaptive_layout : compact:node -> regular:node -> node
 val tab : id:string -> title:string -> ?system_image:string -> ?role:tab_role -> node -> tab
 val tab_view : selected:string -> on_select:(string -> unit Effect.t) -> tab list -> node
-val sidebar_split : selected:string -> on_select:(string -> unit Effect.t) -> tab list -> node
+val sidebar_action
+  :  id:string
+  -> title:string
+  -> ?system_image:string
+  -> on_click:unit Effect.t
+  -> unit
+  -> sidebar_action
+val sidebar_split
+  :  ?header_action:sidebar_action
+  -> ?actions:sidebar_action list
+  -> ?bottom_search_placeholder:string
+  -> ?bottom_search_text:string
+  -> ?bottom_search_on_change:(string -> unit Effect.t)
+  -> ?bottom_action:sidebar_action
+  -> selected:string
+  -> on_select:(string -> unit Effect.t)
+  -> tab list
+  -> node
 val image : string -> node
 val photo_picker
   :  ?is_enabled:bool
@@ -208,7 +264,14 @@ val custom_view : ?key:string -> kind:string -> unit -> node
 val padding : ?insets:edge_insets -> node -> node
 val frame : ?width:float -> ?height:float -> node -> node
 val searchable : text:string -> on_change:(string -> unit Effect.t) -> node -> node
-val toolbar_item : id:string -> title:string -> on_click:unit Effect.t -> toolbar_item
+val toolbar_item
+  :  ?system_image:string
+  -> ?menu_actions:toolbar_menu_action list
+  -> id:string
+  -> title:string
+  -> on_click:unit Effect.t
+  -> unit
+  -> toolbar_item
 val toolbar : toolbar_item list -> node -> node
 val sheet
   :  is_presented:bool
@@ -303,6 +366,7 @@ module Renderer : sig
     val set_text : view -> string -> unit
     val set_text_attributes : view -> text_attributes -> unit
     val set_placeholder : view -> string option -> unit
+    val set_text_field_style : view -> text_field_style -> unit
     val set_spacing : view -> float option -> unit
     val set_children : view -> keyed:(string option) list -> view list -> unit
     val set_tabs
@@ -311,14 +375,34 @@ module Renderer : sig
       -> on_select:(string -> unit) option
       -> rendered_tab list
       -> unit
+    val set_sidebar_shell
+      :  view
+      -> header_action:rendered_sidebar_action option
+      -> actions:rendered_sidebar_action list
+      -> bottom_search_placeholder:string option
+      -> bottom_search_text:string
+      -> bottom_search_on_change:(string -> unit) option
+      -> bottom_action:rendered_sidebar_action option
+      -> unit
     val set_list_row
       :  view
       -> title:string
       -> subtitle:string option
       -> trailing_text:string option
+      -> leading_system_image:string option
+      -> content_style:list_row_content_style
+      -> accessory:list_row_accessory
       -> title_strikethrough:bool
       -> leading_button:rendered_row_leading_button option
       -> swipe_actions:rendered_row_action list
+      -> menu_actions:rendered_row_action list
+      -> unit
+    val refresh_list_row_callbacks
+      :  view
+      -> on_click:(unit -> unit) option
+      -> leading_button:rendered_row_leading_button option
+      -> swipe_actions:rendered_row_action list
+      -> menu_actions:rendered_row_action list
       -> unit
     val set_section : view -> title:string option -> unit
     val set_picker
@@ -388,6 +472,7 @@ module For_testing : sig
     val show : view -> string
     val click_exn : view -> path:int list -> unit
     val change_text_exn : view -> path:int list -> text:string -> unit
+    val submit_text_exn : view -> path:int list -> unit
     val select_photo_exn : view -> path:int list -> image_id:string -> unit
     val capture_camera_exn : view -> path:int list -> image_id:string -> unit
     val select_photo_payload_exn
@@ -402,9 +487,34 @@ module For_testing : sig
       -> unit
     val import_file_exn : view -> path:int list -> content:string -> unit
     val click_sheet_exn : view -> path:int list -> sheet_path:int list -> unit
+    val select_sheet_picker_exn
+      :  view
+      -> path:int list
+      -> sheet_path:int list
+      -> id:string
+      -> unit
+    val import_sheet_file_exn
+      :  view
+      -> path:int list
+      -> sheet_path:int list
+      -> content:string
+      -> unit
     val change_sheet_text_exn
       :  view
       -> path:int list
+      -> sheet_path:int list
+      -> text:string
+      -> unit
+    val click_nested_sheet_exn
+      :  view
+      -> path:int list
+      -> host_path:int list
+      -> sheet_path:int list
+      -> unit
+    val change_nested_sheet_text_exn
+      :  view
+      -> path:int list
+      -> host_path:int list
       -> sheet_path:int list
       -> text:string
       -> unit
@@ -434,12 +544,18 @@ module For_testing : sig
       -> unit
     val change_search_exn : view -> path:int list -> text:string -> unit
     val click_toolbar_item_exn : view -> path:int list -> id:string -> unit
+    val click_toolbar_menu_action_exn : view -> path:int list -> id:string -> title:string -> unit
     val dismiss_sheet_exn : view -> path:int list -> unit
     val select_tab_exn : view -> id:string -> unit
+    val change_sidebar_bottom_search_exn : view -> text:string -> unit
     val select_sidebar_route_exn : view -> id:string -> unit
+    val click_sidebar_header_action_exn : view -> id:string -> unit
+    val click_sidebar_action_exn : view -> id:string -> unit
+    val click_sidebar_bottom_action_exn : view -> id:string -> unit
     val select_picker_exn : view -> path:int list -> id:string -> unit
     val click_row_leading_exn : view -> path:int list -> unit
     val click_row_action_exn : view -> path:int list -> title:string -> unit
+    val click_row_menu_action_exn : view -> path:int list -> title:string -> unit
     val find_text_exn : view -> path:int list -> string
   end
 end

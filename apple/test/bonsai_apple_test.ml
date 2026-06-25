@@ -50,7 +50,7 @@ let%test_unit "renders primitive nodes and stack hierarchy" =
   label#5 text=Today
   stack(horizontal)#2
     button#4 text=Add
-    text-field#3 text=milk placeholder=Task|}
+    text-field#3 text=milk placeholder=Task style=Rounded_border|}
 ;;
 
 let%test_unit "button and text-field events are scheduled through Bonsai effects" =
@@ -68,13 +68,15 @@ let%test_unit "button and text-field events are scheduled through Bonsai effects
              ~on_change:(fun text ->
                text_changes := text :: !text_changes;
                noop)
+             ~on_submit:noop
              ()
          ])
   in
   let root = Renderer.view mounted in
   Backend.click_exn root ~path:[ 0 ];
   Backend.change_text_exn root ~path:[ 1 ] ~text:"bonsai";
-  [%test_result: int] !scheduled ~expect:2;
+  Backend.submit_text_exn root ~path:[ 1 ];
+  [%test_result: int] !scheduled ~expect:3;
   [%test_result: string list] !text_changes ~expect:[ "bonsai" ]
 ;;
 
@@ -202,6 +204,9 @@ let%test_unit "list row renders generic metadata and schedules actions" =
          { title = "Reply to client email"
          ; subtitle = Some "12:30 PM"
          ; trailing_text = None
+         ; leading_system_image = Some "envelope"
+         ; content_style = Apple.Standard
+         ; accessory = Apple.No_accessory
          ; title_strikethrough = false
          ; on_click = Some noop
          ; leading_button =
@@ -219,16 +224,24 @@ let%test_unit "list row renders generic metadata and schedules actions" =
                ; on_click = noop
                }
              ]
+         ; menu_actions =
+             [ { title = "Open"
+               ; system_image = Some "arrow.up.right"
+               ; style = Default
+               ; on_click = noop
+               }
+             ]
          })
   in
   require_string_equal
     (show mounted)
     ~expect:
-      {|list-row#1 title="Reply to client email" subtitle=("12:30 PM") trailing=() strikethrough=false leading=circle:false actions=[Delete:destructive]|};
+      {|list-row#1 title="Reply to client email" subtitle=("12:30 PM") trailing=() style=Standard accessory=No_accessory strikethrough=false leading-image=envelope leading=circle:false actions=[Delete:destructive] menu=[Open:default]|};
   Backend.click_exn (Renderer.view mounted) ~path:[];
   Backend.click_row_leading_exn (Renderer.view mounted) ~path:[];
   Backend.click_row_action_exn (Renderer.view mounted) ~path:[] ~title:"Delete";
-  [%test_result: int] !scheduled ~expect:3
+  Backend.click_row_menu_action_exn (Renderer.view mounted) ~path:[] ~title:"Open";
+  [%test_result: int] !scheduled ~expect:4
 ;;
 
 let%test_unit "text editor renders multiline text and schedules changes" =
@@ -283,10 +296,14 @@ let%test_unit "sections and pickers render native list form controls" =
                  { title = "Biology"
                  ; subtitle = Some "12 cards"
                  ; trailing_text = Some "3 due"
+                 ; leading_system_image = None
+                 ; content_style = Apple.Standard
+                 ; accessory = Apple.No_accessory
                  ; title_strikethrough = false
                  ; on_click = None
                  ; leading_button = None
                  ; swipe_actions = []
+                 ; menu_actions = []
                  }
              ]
          ]
@@ -300,7 +317,7 @@ let%test_unit "sections and pickers render native list form controls" =
   section#2 key=Sort title=Sort
     picker#3 title="Sort decks" selected=due options=[default:Default,name:Name,due:Due]
   section#4 key=Decks
-    list-row#5 title=Biology subtitle=("12 cards") trailing=("3 due") strikethrough=false leading=none actions=[]|};
+    list-row#5 title=Biology subtitle=("12 cards") trailing=("3 due") style=Standard accessory=No_accessory strikethrough=false leading-image=none leading=none actions=[] menu=[]|};
   Backend.select_picker_exn (Renderer.view mounted) ~path:[ 0; 0 ] ~id:"name";
   [%test_result: int] !scheduled ~expect:1;
   [%test_result: string list] !selections ~expect:[ "name" ]
@@ -482,10 +499,14 @@ let%test_unit "large keyed list updates do not rebuild unchanged rows" =
           { title = label
           ; subtitle = None
           ; trailing_text = None
+          ; leading_system_image = None
+          ; content_style = Apple.Standard
+          ; accessory = Apple.No_accessory
           ; title_strikethrough = false
           ; on_click = None
           ; leading_button = None
           ; swipe_actions = []
+          ; menu_actions = []
           })
   in
   let mounted = Renderer.mount ~schedule_event:(fun _ -> ()) (render (rows 1_000 "row-500")) in
@@ -580,14 +601,32 @@ let%test_unit "modifier events are scheduled through Bonsai effects" =
          searchable_changes := text :: !searchable_changes;
          noop)
        |> Apple.toolbar
-            [ Apple.toolbar_item ~id:"refresh" ~title:"Refresh" ~on_click:noop ]
+            [ Apple.toolbar_item
+                ~id:"refresh"
+                ~title:"Refresh"
+                ~system_image:"arrow.clockwise"
+                ~menu_actions:
+                  [ { title = "Reload from server"
+                    ; system_image = Some "icloud.and.arrow.down"
+                    ; style = Apple.Default
+                    ; on_click = noop
+                    }
+                  ]
+                ~on_click:noop
+                ()
+            ]
        |> Apple.sheet ~is_presented:true ~content:(Apple.text "Details") ~on_dismiss:noop)
   in
   let root = Renderer.view mounted in
   Backend.change_search_exn root ~path:[] ~text:"bonsai";
   Backend.click_toolbar_item_exn root ~path:[] ~id:"refresh";
+  Backend.click_toolbar_menu_action_exn
+    root
+    ~path:[]
+    ~id:"refresh"
+    ~title:"Reload from server";
   Backend.dismiss_sheet_exn root ~path:[];
-  [%test_result: int] !scheduled ~expect:3;
+  [%test_result: int] !scheduled ~expect:4;
   [%test_result: string list] !searchable_changes ~expect:[ "bonsai" ]
 ;;
 
@@ -626,6 +665,7 @@ let%test_unit "presented sheet content is mounted and diffed by the renderer" =
 
 let%test_unit "testing backend can interact with presented sheet content" =
   Backend.reset ();
+  let saved = ref None in
   let component graph =
     let open Bonsai.Let_syntax in
     let value, set_value = Bonsai.state "" graph in
@@ -636,7 +676,9 @@ let%test_unit "testing backend can interact with presented sheet content" =
          ~content:
            (Apple.vstack
               [ Apple.text_field ~text:value ~placeholder:"Name" ~on_change:set_value ()
-              ; Apple.button "Save" ~on_click:noop
+              ; Apple.button
+                  "Save"
+                  ~on_click:(Bonsai.Effect.of_thunk (fun () -> saved := Some value))
               ])
   in
   let app =
@@ -648,7 +690,104 @@ let%test_unit "testing backend can interact with presented sheet content" =
   let view = Option.value_exn (Test_app.view app) in
   Backend.change_sheet_text_exn view ~path:[] ~sheet_path:[ 0 ] ~text:"Edited";
   Backend.click_sheet_exn view ~path:[] ~sheet_path:[ 1 ];
+  [%test_result: string option] !saved ~expect:(Some "Edited");
   require_string_contains (Backend.show view) {|text=Edited placeholder=Name|}
+;;
+
+let%test_unit "testing backend can change sheet text on an unselected sidebar route" =
+  Backend.reset ();
+  let saved = ref None in
+  let component graph =
+    let open Bonsai.Let_syntax in
+    let is_renaming, set_is_renaming = Bonsai.state false graph in
+    let saved_description, set_saved_description = Bonsai.state "Cell study" graph in
+    let name, set_name = Bonsai.state "" graph in
+    let draft_description, set_draft_description = Bonsai.state "Cell study" graph in
+    let%arr is_renaming
+    and set_is_renaming
+    and saved_description
+    and set_saved_description
+    and name
+    and set_name
+    and draft_description
+    and set_draft_description in
+    let decks_route =
+      Apple.navigation_stack
+        [ Apple.list
+            [ Apple.list_row
+                { title = "Biology"
+                ; subtitle = None
+                ; trailing_text = None
+                ; leading_system_image = None
+                ; content_style = Apple.Standard
+                ; accessory = Apple.No_accessory
+                ; title_strikethrough = false
+                ; on_click = None
+                ; leading_button = None
+                ; swipe_actions =
+                    [ { title = "Rename"
+                      ; system_image = None
+                      ; style = Apple.Default
+                      ; on_click =
+                          Bonsai.Effect.Many
+                            [ set_is_renaming true
+                            ; set_name "Biology"
+                            ; set_draft_description saved_description
+                            ]
+                      }
+                    ]
+                ; menu_actions = []
+                }
+            ]
+            ~key:(fun _ -> "bio")
+            ~row:Fn.id
+        ]
+      |> Apple.sheet
+           ~is_presented:is_renaming
+           ~content:
+             (Apple.vstack
+                [ Apple.text "Rename deck"
+                ; Apple.text_field ~text:name ~placeholder:"Deck name" ~on_change:set_name ()
+                ; Apple.text_field
+                    ~text:draft_description
+                    ~placeholder:"Description"
+                    ~on_change:set_draft_description
+                    ()
+                ; Apple.hstack
+                    [ Apple.button "Cancel" ~on_click:noop
+                    ; Apple.button
+                        "Save"
+                        ~on_click:
+                          (Bonsai.Effect.Many
+                             [ set_saved_description draft_description
+                             ; set_is_renaming false
+                             ; Bonsai.Effect.of_thunk (fun () ->
+                                 saved := Some draft_description)
+                             ])
+                    ]
+                ])
+    in
+    Apple.sidebar_split
+      ~selected:"chat"
+      ~on_select:(fun _ -> noop)
+      [ Apple.tab ~id:"decks" ~title:"Decks" decks_route
+      ; Apple.tab ~id:"chat" ~title:"Chat" (Apple.text "Chat")
+      ]
+  in
+  let app =
+    Test_app.create
+      ~time_source:(Bonsai.Time_source.create ~start:Time_ns.epoch)
+      component
+  in
+  Test_app.flush_and_render app;
+  let view = Option.value_exn (Test_app.view app) in
+  Backend.click_row_action_exn view ~path:[ 0; 0; 0 ] ~title:"Rename";
+  Backend.change_sheet_text_exn view ~path:[ 0 ] ~sheet_path:[ 2 ] ~text:"Exam notes";
+  require_string_contains (Backend.show view) {|text="Exam notes" placeholder=Description|};
+  Backend.click_sheet_exn view ~path:[ 0 ] ~sheet_path:[ 3; 1 ];
+  [%test_result: string option] !saved ~expect:(Some "Exam notes");
+  Backend.click_row_action_exn view ~path:[ 0; 0; 0 ] ~title:"Rename";
+  require_string_contains (Backend.show view) {|text="Exam notes" placeholder=Description|}
 ;;
 
 let%test_unit "tab view renders tab metadata and selected content" =
@@ -798,10 +937,38 @@ let%test_unit "sidebar split renders route metadata and schedules selection" =
   Backend.reset ();
   let scheduled = ref 0 in
   let selected = ref [] in
+  let search_changes = ref [] in
   let mounted =
     Renderer.mount
       ~schedule_event:(fun _ -> Int.incr scheduled)
       (Apple.sidebar_split
+         ~header_action:
+           (Apple.sidebar_action
+              ~id:"account"
+              ~title:"Account"
+              ~system_image:"person.crop.circle"
+              ~on_click:(Bonsai.Effect.of_thunk (fun () -> ()))
+              ())
+         ~actions:
+           [ Apple.sidebar_action
+               ~id:"practice-cards"
+               ~title:"Practice"
+              ~system_image:"rectangle.stack.badge.play"
+              ~on_click:noop
+              ()
+           ]
+         ~bottom_search_placeholder:"Search"
+         ~bottom_search_text:""
+         ~bottom_search_on_change:(fun text ->
+           search_changes := text :: !search_changes;
+           noop)
+         ~bottom_action:
+           (Apple.sidebar_action
+              ~id:"new-chat"
+              ~title:"Chat"
+              ~system_image:"square.and.pencil"
+              ~on_click:noop
+              ())
          ~selected:"chat"
          ~on_select:(fun id ->
            selected := id :: !selected;
@@ -821,11 +988,21 @@ let%test_unit "sidebar split renders route metadata and schedules selection" =
   require_string_equal
     (show mounted)
     ~expect:
-      {|sidebar-split#1 selected=chat routes=[chat:Chat:bubble.left.and.bubble.right,decks:Decks:rectangle.stack]
+      {|sidebar-split#1 selected=chat routes=[chat:Chat:bubble.left.and.bubble.right,decks:Decks:rectangle.stack] sidebar-header-action=account:Account:person.crop.circle sidebar-actions=[practice-cards:Practice:rectangle.stack.badge.play] sidebar-bottom-search=Search text= sidebar-bottom-action=new-chat:Chat:square.and.pencil
   label#2 key=chat text="Chat detail"
   label#3 key=decks text="Deck detail"|};
-  Backend.select_sidebar_route_exn (Renderer.view mounted) ~id:"decks";
+  Backend.change_sidebar_bottom_search_exn (Renderer.view mounted) ~text:"math";
   [%test_result: int] !scheduled ~expect:1;
+  [%test_result: string list] !search_changes ~expect:[ "math" ];
+  require_string_contains (show mounted) {|sidebar-bottom-search=Search text=math|};
+  Backend.click_sidebar_header_action_exn (Renderer.view mounted) ~id:"account";
+  [%test_result: int] !scheduled ~expect:2;
+  Backend.click_sidebar_action_exn (Renderer.view mounted) ~id:"practice-cards";
+  [%test_result: int] !scheduled ~expect:3;
+  Backend.click_sidebar_bottom_action_exn (Renderer.view mounted) ~id:"new-chat";
+  [%test_result: int] !scheduled ~expect:4;
+  Backend.select_sidebar_route_exn (Renderer.view mounted) ~id:"decks";
+  [%test_result: int] !scheduled ~expect:5;
   [%test_result: string list] !selected ~expect:[ "decks" ]
 ;;
 
