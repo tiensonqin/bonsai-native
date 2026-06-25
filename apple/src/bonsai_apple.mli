@@ -253,6 +253,7 @@ val image : string -> node
 val image_file : string -> node
 val photo_picker
   :  ?is_enabled:bool
+  -> ?system_image:string
   -> title:string
   -> ?selected:string
   -> on_select:(string -> unit Effect.t)
@@ -260,6 +261,7 @@ val photo_picker
   -> node
 val photo_picker_payload
   :  ?is_enabled:bool
+  -> ?system_image:string
   -> title:string
   -> ?selected:string
   -> on_select:(image_payload -> unit Effect.t)

@@ -311,6 +311,7 @@ type node =
       }
   | Photo_picker_node of
       { title : string
+      ; system_image : string option
       ; is_enabled : bool
       ; wants_payload : bool
       ; selected : string option
@@ -637,8 +638,8 @@ let image_payload_of_event_text text =
   | _ -> None
 ;;
 
-let photo_picker ?(is_enabled = true) ~title ?selected ~on_select () =
-  Photo_picker_node { title; is_enabled; wants_payload = false; selected; on_select }
+let photo_picker ?(is_enabled = true) ?system_image ~title ?selected ~on_select () =
+  Photo_picker_node { title; system_image; is_enabled; wants_payload = false; selected; on_select }
 ;;
 
 let legacy_image_payload image_id =
@@ -653,9 +654,10 @@ let legacy_image_payload image_id =
   }
 ;;
 
-let photo_picker_payload ?(is_enabled = true) ~title ?selected ~on_select () =
+let photo_picker_payload ?(is_enabled = true) ?system_image ~title ?selected ~on_select () =
   Photo_picker_node
     { title
+    ; system_image
     ; is_enabled
     ; wants_payload = true
     ; selected
@@ -1049,10 +1051,12 @@ module Renderer = struct
         | Image_node image -> [%sexp "image", (image : image)]
         | Picker_node { title; selected; options; on_select = _ } ->
           [%sexp "picker", (title : string), (selected : string), (options : picker_option list)]
-        | Photo_picker_node { title; is_enabled; wants_payload; selected; on_select = _ } ->
+        | Photo_picker_node
+            { title; system_image; is_enabled; wants_payload; selected; on_select = _ } ->
           [%sexp
             "photo-picker"
           , (title : string)
+          , (system_image : string option)
           , (is_enabled : bool)
           , (wants_payload : bool)
           , (selected : string option)]
@@ -1310,8 +1314,9 @@ module Renderer = struct
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          replace_children []
-       | Photo_picker_node { title; is_enabled; wants_payload; selected; on_select } ->
+       | Photo_picker_node { title; system_image; is_enabled; wants_payload; selected; on_select } ->
          Backend.set_text t.view title;
+         Backend.set_system_image t.view system_image;
          Backend.set_enabled t.view is_enabled;
          Backend.set_image_payload_mode t.view wants_payload;
          Backend.set_placeholder t.view selected;

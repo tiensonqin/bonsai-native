@@ -1592,7 +1592,7 @@ private struct BonsaiNativePhotoPickerView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       PhotosPicker(selection: $selectedItem, matching: .images) {
-        Label(node.text, systemImage: "photo")
+        Label(node.text, systemImage: node.systemImage ?? "photo")
       }
       if let selected = node.placeholder, !selected.isEmpty {
         Label("Image attached", systemImage: "checkmark.circle.fill")

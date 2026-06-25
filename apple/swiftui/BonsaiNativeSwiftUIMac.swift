@@ -385,7 +385,7 @@ private struct BonsaiNativeNodeView: View {
         }
       }
     case .photoPicker:
-      Label(node.text, systemImage: "photo")
+      Label(node.text, systemImage: node.systemImage ?? "photo")
         .foregroundStyle(.secondary)
     case .fileExporter:
       Label(node.text, systemImage: "square.and.arrow.up")

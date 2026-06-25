@@ -516,6 +516,7 @@ let%test_unit "photo picker renders and schedules selected image identifiers" =
       ~schedule_event:(fun _ -> Int.incr scheduled)
       (Apple.photo_picker
          ~title:"Attach image"
+         ~system_image:"plus"
          ~selected:"photo://existing"
          ~on_select:(fun image_id ->
            selections := image_id :: !selections;
@@ -524,7 +525,7 @@ let%test_unit "photo picker renders and schedules selected image identifiers" =
   in
   require_string_equal
     (show mounted)
-    ~expect:{|photo-picker#1 text="Attach image" selected=(photo://existing)|};
+    ~expect:{|photo-picker#1 text="Attach image" selected=(photo://existing) image=plus|};
   Backend.select_photo_exn (Renderer.view mounted) ~path:[] ~image_id:"photo://new";
   [%test_result: int] !scheduled ~expect:1;
   [%test_result: string list] !selections ~expect:[ "photo://new" ]
