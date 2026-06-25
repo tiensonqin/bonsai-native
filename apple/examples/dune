@@ -65,7 +65,10 @@
  BonsaiNativeCounter.app
  (rule
   (alias default)
-  (deps ../Info.plist ../ios_app.exe)
+  (deps
+   ../Info.plist
+   ../ios_app.exe
+   ../../../scripts/apple-codesign-identity.sh)
   (targets Info.plist BonsaiNativeCounter)
   (enabled_if
    (or
@@ -78,18 +81,18 @@
     (copy ../Info.plist Info.plist)
     (copy ../ios_app.exe BonsaiNativeCounter)
     (run
-     codesign
-     --force
-     --sign
-     %{env:CODESIGN_IDENTITY=20C6BAC6D27E2CC8D07385E763D2618774727C50}
-     --timestamp=none
-     BonsaiNativeCounter)))))
+     /bin/sh
+     -c
+     "codesign --force --sign \"$(%{dep:../../../scripts/apple-codesign-identity.sh})\" --timestamp=none BonsaiNativeCounter")))))
 
 (subdir
  BonsaiNativeDemos.app
  (rule
   (alias default)
-  (deps ../Info.demos.plist ../ios_app.exe)
+  (deps
+   ../Info.demos.plist
+   ../ios_app.exe
+   ../../../scripts/apple-codesign-identity.sh)
   (targets Info.plist BonsaiNativeDemos)
   (enabled_if
    (or
@@ -102,9 +105,6 @@
     (copy ../Info.demos.plist Info.plist)
     (copy ../ios_app.exe BonsaiNativeDemos)
     (run
-     codesign
-     --force
-     --sign
-     %{env:CODESIGN_IDENTITY=20C6BAC6D27E2CC8D07385E763D2618774727C50}
-     --timestamp=none
-     BonsaiNativeDemos)))))
+     /bin/sh
+     -c
+     "codesign --force --sign \"$(%{dep:../../../scripts/apple-codesign-identity.sh})\" --timestamp=none BonsaiNativeDemos")))))
