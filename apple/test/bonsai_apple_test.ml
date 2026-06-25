@@ -354,6 +354,19 @@ let%test_unit "navigation link renders a label and destination" =
       list-row#4 title="Add card" subtitle=() trailing=() style=Standard accessory=Disclosure_indicator strikethrough=false leading-image=plus preview-image=none leading=none actions=[] menu=[]|}
 ;;
 
+let%test_unit "bottom safe area inset renders modifier content" =
+  Backend.reset ();
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> ())
+      (Apple.navigation_stack [ Apple.text "Decks" ]
+       |> Apple.safe_area_inset_bottom
+            (Apple.text_field ~text:"" ~placeholder:"New deck" ~on_change:(fun _ -> noop) ()))
+  in
+  require_string_contains (show mounted) {|safe-area-inset-bottom:|};
+  require_string_contains (show mounted) {|placeholder="New deck"|}
+;;
+
 let%test_unit "alert renders text input and schedules actions" =
   Backend.reset ();
   let scheduled = ref 0 in

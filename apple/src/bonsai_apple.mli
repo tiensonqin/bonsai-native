@@ -326,6 +326,7 @@ val toolbar_item
   -> toolbar_item
 val toolbar : toolbar_item list -> node -> node
 val tap_action : on_click:unit Effect.t -> node -> node
+val safe_area_inset_bottom : node -> node -> node
 val alert_action
   :  ?role:alert_action_role
   -> ?is_enabled:bool
@@ -397,6 +398,7 @@ type modifier =
       }
   | Toolbar of toolbar_item list
   | Tap_action of { on_click : unit Effect.t }
+  | Safe_area_inset_bottom of { content : node }
   | Sheet of
       { is_presented : bool
       ; content : node
@@ -424,6 +426,7 @@ type 'view rendered_modifier =
       }
   | Rendered_toolbar of toolbar_item list
   | Rendered_tap_action of { on_click : unit Effect.t }
+  | Rendered_safe_area_inset_bottom of { content : 'view }
   | Rendered_sheet of
       { is_presented : bool
       ; content : 'view option
@@ -585,7 +588,13 @@ module For_testing : sig
     val diff_stats : Stats.t -> Stats.t -> Stats.t
     val show : view -> string
     val show_at_path : view -> path:int list -> string
+    val show_safe_area_inset_bottom_exn : view -> path:int list -> string
     val click_exn : view -> path:int list -> unit
+    val click_safe_area_inset_bottom_exn
+      :  view
+      -> path:int list
+      -> inset_path:int list
+      -> unit
     val change_alert_text_exn : view -> text:string -> unit
     val click_alert_action_exn : view -> id:string -> unit
     val change_nested_sheet_alert_text_exn
@@ -601,8 +610,19 @@ module For_testing : sig
       -> id:string
       -> unit
     val change_text_exn : view -> path:int list -> text:string -> unit
+    val change_safe_area_inset_bottom_text_exn
+      :  view
+      -> path:int list
+      -> inset_path:int list
+      -> text:string
+      -> unit
     val change_toggle_exn : view -> path:int list -> is_on:bool -> unit
     val submit_text_exn : view -> path:int list -> unit
+    val submit_safe_area_inset_bottom_text_exn
+      :  view
+      -> path:int list
+      -> inset_path:int list
+      -> unit
     val select_photo_exn : view -> path:int list -> image_id:string -> unit
     val capture_camera_exn : view -> path:int list -> image_id:string -> unit
     val select_photo_payload_exn

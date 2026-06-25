@@ -288,6 +288,12 @@ external set_native_sheet
   -> unit
   = "bonsai_apple_swiftui_set_sheet"
 
+external set_native_safe_area_inset_bottom
+  :  native
+  -> native option
+  -> unit
+  = "bonsai_apple_swiftui_set_safe_area_inset_bottom"
+
 external set_native_alert
   :  native
   -> bool
@@ -1015,6 +1021,12 @@ module Backend = struct
     set_native_sheet view.native None false no_event
   ;;
 
+  let set_safe_area_inset_bottom view content =
+    set_native_safe_area_inset_bottom
+      view.native
+      (Option.map content ~f:(fun content -> content.native))
+  ;;
+
   let alert_role_id = function
     | Apple.Alert_default -> 0
     | Alert_cancel -> 1
@@ -1122,6 +1134,7 @@ module Backend = struct
   let set_modifiers view ~schedule_event modifiers =
     let saw_searchable = ref false in
     let saw_sheet = ref false in
+    let saw_safe_area_inset_bottom = ref false in
     let saw_alert = ref false in
     let saw_toolbar = ref false in
     let saw_padding = ref false in
@@ -1136,6 +1149,9 @@ module Backend = struct
       | Apple.Rendered_sheet { is_presented; content; on_dismiss } ->
         saw_sheet := true;
         install_sheet view ~schedule_event ~is_presented ~content ~on_dismiss
+      | Apple.Rendered_safe_area_inset_bottom { content } ->
+        saw_safe_area_inset_bottom := true;
+        set_safe_area_inset_bottom view (Some content)
       | Apple.Rendered_alert
           { is_presented
           ; title
@@ -1181,6 +1197,7 @@ module Backend = struct
         set_tap_action view (Some (fun () -> schedule_event on_click)));
     if not !saw_searchable then clear_searchable view;
     if not !saw_sheet then clear_sheet view;
+    if not !saw_safe_area_inset_bottom then set_safe_area_inset_bottom view None;
     if not !saw_alert then clear_alert view;
     if not !saw_toolbar then clear_toolbar view;
     if not !saw_padding then set_native_padding view.native (-1.) (-1.) (-1.) (-1.);

@@ -372,6 +372,7 @@ and modifier =
       }
   | Toolbar of toolbar_item list
   | Tap_action of { on_click : unit Effect.t }
+  | Safe_area_inset_bottom of { content : node }
   | Sheet of
       { is_presented : bool
       ; content : node
@@ -399,6 +400,7 @@ type 'view rendered_modifier =
       }
   | Rendered_toolbar of toolbar_item list
   | Rendered_tap_action of { on_click : unit Effect.t }
+  | Rendered_safe_area_inset_bottom of { content : 'view }
   | Rendered_sheet of
       { is_presented : bool
       ; content : 'view option
@@ -768,6 +770,10 @@ let toolbar_item
 ;;
 let toolbar items node = Modified_node (Toolbar items, node)
 let tap_action ~on_click node = Modified_node (Tap_action { on_click }, node)
+let safe_area_inset_bottom content node =
+  Modified_node (Safe_area_inset_bottom { content }, node)
+;;
+
 let alert_action ?(role = Alert_default) ?(is_enabled = true) ~id ~title ~on_click () =
   { id; title; role; is_enabled; on_click }
 ;;
@@ -980,6 +986,8 @@ module Renderer = struct
                    , List.length item.menu_actions ))
                  : (string * string * string option * bool * int) list) )]
           | Tap_action _ -> [%sexp "tap-action"]
+          | Safe_area_inset_bottom { content } ->
+            [%sexp "safe-area-inset-bottom", (fingerprint content : string)]
           | Sheet { is_presented; content; on_dismiss = _ } ->
             [%sexp "sheet", (is_presented : bool), (fingerprint content : string)]
           | Alert
@@ -1560,6 +1568,15 @@ module Renderer = struct
           | Searchable { text; on_change } -> Rendered_searchable { text; on_change }
           | Toolbar items -> Rendered_toolbar items
           | Tap_action { on_click } -> Rendered_tap_action { on_click }
+          | Safe_area_inset_bottom { content } ->
+            Hash_set.add used index;
+            let existing =
+              Hashtbl.find old_by_index index
+              |> Option.map ~f:(fun child -> { key = None; mounted = child.mounted })
+            in
+            let mounted = patch_child ~schedule_event:t.schedule_event existing content in
+            next_modifier_children := { index; mounted } :: !next_modifier_children;
+            Rendered_safe_area_inset_bottom { content = mounted.view }
           | Sheet { is_presented; content; on_dismiss } ->
             let content =
               if is_presented
@@ -2096,6 +2113,7 @@ module For_testing = struct
       | Rendered_searchable _ -> "searchable"
       | Rendered_toolbar _ -> "toolbar"
       | Rendered_tap_action _ -> "tap-action"
+      | Rendered_safe_area_inset_bottom _ -> "safe-area-inset-bottom"
       | Rendered_sheet _ -> "sheet"
       | Rendered_alert _ -> "alert"
     ;;
@@ -2429,6 +2447,13 @@ module For_testing = struct
             (spaces ^ "  sheet:") :: show_lines content ~indent:(indent + 4)
           | _ -> [])
       in
+      let safe_area_inset_lines =
+        List.concat_map view.modifiers ~f:(function
+          | Rendered_safe_area_inset_bottom { content } ->
+            (spaces ^ "  safe-area-inset-bottom:")
+            :: show_lines content ~indent:(indent + 4)
+          | _ -> [])
+      in
       (spaces
        ^ kind_name view.kind
        ^ "#"
@@ -2467,7 +2492,8 @@ module For_testing = struct
        ^ toolbar
        ^ navigation_title
        ^ alert)
-      :: child_lines
+      :: safe_area_inset_lines
+      @ child_lines
       @ sheet_lines
     ;;
 
@@ -2484,11 +2510,29 @@ module For_testing = struct
 
     let show_at_path view ~path = show (find_exn view ~path)
 
+    let safe_area_inset_bottom_content_exn view =
+      match
+        List.find_map view.modifiers ~f:(function
+          | Rendered_safe_area_inset_bottom { content } -> Some content
+          | _ -> None)
+      with
+      | Some content -> content
+      | None -> failwith "View has no bottom safe-area inset"
+    ;;
+
+    let show_safe_area_inset_bottom_exn view ~path =
+      show (safe_area_inset_bottom_content_exn (find_exn view ~path))
+    ;;
+
     let click_exn view ~path =
       let view = find_exn view ~path in
       match view.on_click with
       | Some f -> f ()
       | None -> failwith "View has no click handler"
+    ;;
+
+    let click_safe_area_inset_bottom_exn view ~path ~inset_path =
+      click_exn (safe_area_inset_bottom_content_exn (find_exn view ~path)) ~path:inset_path
     ;;
 
     let change_text_exn view ~path ~text =
@@ -2497,6 +2541,13 @@ module For_testing = struct
       match view.on_change with
       | Some f -> f text
       | None -> failwith "View has no text-change handler"
+    ;;
+
+    let change_safe_area_inset_bottom_text_exn view ~path ~inset_path ~text =
+      change_text_exn
+        (safe_area_inset_bottom_content_exn (find_exn view ~path))
+        ~path:inset_path
+        ~text
     ;;
 
     let change_toggle_exn view ~path ~is_on =
@@ -2512,6 +2563,12 @@ module For_testing = struct
       match view.on_click with
       | Some f -> f ()
       | None -> failwith "View has no text-submit handler"
+    ;;
+
+    let submit_safe_area_inset_bottom_text_exn view ~path ~inset_path =
+      submit_text_exn
+        (safe_area_inset_bottom_content_exn (find_exn view ~path))
+        ~path:inset_path
     ;;
 
     let select_photo_exn view ~path ~image_id =

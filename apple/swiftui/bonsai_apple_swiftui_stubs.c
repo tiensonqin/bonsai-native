@@ -92,6 +92,7 @@ extern void bonsai_native_swiftui_set_sheet(
   void *content,
   bool is_presented,
   int32_t dismiss_event_id);
+extern void bonsai_native_swiftui_set_safe_area_inset_bottom(void *node, void *content);
 extern void bonsai_native_swiftui_set_alert(
   void *node,
   bool is_presented,
@@ -721,6 +722,15 @@ CAMLprim value bonsai_apple_swiftui_set_sheet(
     Is_none(content) ? NULL : pointer_val(Some_val(content)),
     Bool_val(is_presented),
     Int_val(dismiss_event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_safe_area_inset_bottom(value node, value content)
+{
+  CAMLparam2(node, content);
+  bonsai_native_swiftui_set_safe_area_inset_bottom(
+    pointer_val(node),
+    Is_none(content) ? NULL : pointer_val(Some_val(content)));
   CAMLreturn(Val_unit);
 }
 

@@ -103,6 +103,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var searchText = ""
   @Published var searchEventId: Int32?
   @Published var sheetContent: BonsaiNativeNode?
+  @Published var bottomSafeAreaInsetContent: BonsaiNativeNode?
   @Published var isSheetPresented = false
   @Published var dismissEventId: Int32?
   @Published var isAlertPresented = false
@@ -632,14 +633,16 @@ private struct BonsaiNativeNodeView: View {
 
   @ViewBuilder
   private func applyModifiers<Content: View>(to content: Content) -> some View {
-    let base = tapAction(
-      regularMaterialPanel(
-        content
-        .padding(node.padding ?? EdgeInsets())
-        .frame(
-          width: node.frameWidth,
-          height: node.frameHeight,
-          alignment: .topLeading
+    let base = bottomSafeAreaInset(
+      tapAction(
+        regularMaterialPanel(
+          content
+          .padding(node.padding ?? EdgeInsets())
+          .frame(
+            width: node.frameWidth,
+            height: node.frameHeight,
+            alignment: .topLeading
+          )
         )
       )
     )
@@ -707,6 +710,17 @@ private struct BonsaiNativeNodeView: View {
             BonsaiNativeNodeView(node: sheetContent, model: model)
           }
       }
+    }
+  }
+
+  @ViewBuilder
+  private func bottomSafeAreaInset<InsetContent: View>(_ content: InsetContent) -> some View {
+    if let bottomSafeAreaInsetContent = node.bottomSafeAreaInsetContent {
+      content.safeAreaInset(edge: .bottom, spacing: 0) {
+        BonsaiNativeNodeView(node: bottomSafeAreaInsetContent, model: model)
+      }
+    } else {
+      content
     }
   }
 
@@ -1011,6 +1025,15 @@ public func bonsai_native_swiftui_set_sheet(
   node.sheetContent = nativeNode(from: contentPointer)
   node.isSheetPresented = isPresented
   node.dismissEventId = dismissEventId < 0 ? nil : dismissEventId
+}
+
+@_cdecl("bonsai_native_swiftui_set_safe_area_inset_bottom")
+public func bonsai_native_swiftui_set_safe_area_inset_bottom(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ contentPointer: UnsafeMutableRawPointer?
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.bottomSafeAreaInsetContent = nativeNode(from: contentPointer)
 }
 
 @_cdecl("bonsai_native_swiftui_set_alert")
