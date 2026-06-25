@@ -39,10 +39,7 @@
   "-arch"
   -ccopt
   "%{env:IOS_ARCH=arm64}"
-  -ccopt
-  "-isysroot"
-  -ccopt
-  "%{env:IOS_SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.0.sdk}"
+  (:include ios_sdkroot_flags.sexp)
   -ccopt
   "-miphoneos-version-min=17.0"
   -ccopt
@@ -60,6 +57,20 @@
   camlkit-gui.UIKit)
  (preprocess
   (pps ppx_jane bonsai.ppx_bonsai)))
+
+(rule
+ (targets ios_sdkroot_flags.sexp)
+ (deps ../../scripts/ios-sdkroot-flags.sh)
+ (enabled_if
+  (or
+   (= %{context_name} device.ios)
+   (= %{context_name} simulator.ios)
+   (= %{context_name} simulator-arm.ios)
+   (= %{context_name} catalyst.ios)))
+ (action
+  (with-stdout-to
+   %{targets}
+   (run ../../scripts/ios-sdkroot-flags.sh))))
 
 (subdir
  BonsaiNativeCounter.app
