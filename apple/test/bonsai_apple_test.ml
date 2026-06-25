@@ -354,6 +354,25 @@ let%test_unit "navigation link renders a label and destination" =
       list-row#4 title="Add card" subtitle=() trailing=() style=Standard accessory=Disclosure_indicator strikethrough=false leading-image=plus preview-image=none leading=none actions=[] menu=[]|}
 ;;
 
+let%test_unit "navigation link schedules activation callbacks" =
+  Backend.reset ();
+  let scheduled = ref 0 in
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> Int.incr scheduled)
+      (Apple.navigation_stack
+         [ Apple.navigation_link
+             ~on_activate:noop
+             ~on_deactivate:noop
+             ~destination:(Apple.text "Deck detail")
+             (Apple.text "Deck")
+         ])
+  in
+  Backend.activate_navigation_link_exn (Renderer.view mounted) ~path:[ 0 ];
+  Backend.deactivate_navigation_link_exn (Renderer.view mounted) ~path:[ 0 ];
+  [%test_result: int] !scheduled ~expect:2
+;;
+
 let%test_unit "bottom safe area inset renders modifier content" =
   Backend.reset ();
   let mounted =

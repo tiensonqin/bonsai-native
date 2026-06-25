@@ -118,6 +118,13 @@ external set_native_on_click
   -> unit
   = "bonsai_apple_swiftui_set_on_click"
 
+external set_native_navigation_link_callbacks
+  :  native
+  -> int
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_navigation_link_callbacks"
+
 external set_native_tap_action
   :  native
   -> int
@@ -544,6 +551,8 @@ module Backend = struct
   type view =
     { native : native
     ; mutable click_event_id : int option
+    ; mutable navigation_activate_event_id : int option
+    ; mutable navigation_deactivate_event_id : int option
     ; mutable tap_event_id : int option
     ; mutable change_event_id : int option
     ; mutable search_event_id : int option
@@ -564,8 +573,10 @@ module Backend = struct
      | Apple.Custom_view kind -> set_native_text native kind
      | _ -> ());
     { native
-    ; click_event_id = None
-    ; tap_event_id = None
+      ; click_event_id = None
+      ; navigation_activate_event_id = None
+      ; navigation_deactivate_event_id = None
+      ; tap_event_id = None
     ; change_event_id = None
     ; search_event_id = None
     ; tab_select_event_id = None
@@ -844,6 +855,30 @@ module Backend = struct
       let event_id = install_handler view.click_event_id (Click handler) in
       view.click_event_id <- Some event_id;
       set_native_on_click view.native event_id
+  ;;
+
+  let set_navigation_link_callbacks view ~on_activate ~on_deactivate =
+    let install existing handler =
+      match handler with
+      | None ->
+        clear_handler existing;
+        None, no_event
+      | Some handler ->
+        let event_id = install_handler existing (Click handler) in
+        Some event_id, event_id
+    in
+    let activate_event_id, native_activate_event_id =
+      install view.navigation_activate_event_id on_activate
+    in
+    let deactivate_event_id, native_deactivate_event_id =
+      install view.navigation_deactivate_event_id on_deactivate
+    in
+    view.navigation_activate_event_id <- activate_event_id;
+    view.navigation_deactivate_event_id <- deactivate_event_id;
+    set_native_navigation_link_callbacks
+      view.native
+      native_activate_event_id
+      native_deactivate_event_id
   ;;
 
   let set_tap_action view handler =

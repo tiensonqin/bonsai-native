@@ -275,6 +275,8 @@ type node =
   | Navigation_link_node of
       { label : node
       ; destination : node
+      ; on_activate : unit Effect.t option
+      ; on_deactivate : unit Effect.t option
       }
   | Navigation_split_node of
       { sidebar : node
@@ -508,7 +510,9 @@ let picker ~title ~selected ~on_select (options : picker_option list) =
 
 let navigation_stack children = Navigation_stack_node children
 
-let navigation_link ~destination label = Navigation_link_node { label; destination }
+let navigation_link ?on_activate ?on_deactivate ~destination label =
+  Navigation_link_node { label; destination; on_activate; on_deactivate }
+;;
 
 let navigation_split ~sidebar ~content ~detail =
   Navigation_split_node { sidebar; content; detail }
@@ -907,6 +911,11 @@ module Renderer = struct
       -> swipe_actions:rendered_row_action list
       -> menu_actions:rendered_row_action list
       -> unit
+    val set_navigation_link_callbacks
+      :  view
+      -> on_activate:(unit -> unit) option
+      -> on_deactivate:(unit -> unit) option
+      -> unit
     val set_section : view -> title:string option -> unit
     val set_picker
       :  view
@@ -1051,7 +1060,7 @@ module Renderer = struct
                : (string * string) list) )]
         | Navigation_stack_node children ->
           [%sexp "navigation-stack", (List.map children ~f:fingerprint : string list)]
-        | Navigation_link_node { label; destination } ->
+        | Navigation_link_node { label; destination; on_activate = _; on_deactivate = _ } ->
           [%sexp
             "navigation-link"
           , (fingerprint label : string)
@@ -1290,9 +1299,14 @@ module Renderer = struct
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          reconcile_positional t children
-       | Navigation_link_node { label; destination } ->
+       | Navigation_link_node { label; destination; on_activate; on_deactivate } ->
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
+         Backend.set_navigation_link_callbacks
+           t.view
+           ~on_activate:(Option.map on_activate ~f:(fun effect -> fun () -> t.schedule_event effect))
+           ~on_deactivate:
+             (Option.map on_deactivate ~f:(fun effect -> fun () -> t.schedule_event effect));
          reconcile_positional t [ label; destination ]
        | Navigation_split_node { sidebar; content; detail } ->
          Backend.set_on_click t.view None;
@@ -1734,6 +1748,8 @@ module For_testing = struct
       ; mutable on_click : (unit -> unit) option
       ; mutable on_change : (string -> unit) option
       ; mutable on_toggle : (bool -> unit) option
+      ; mutable on_navigation_activate : (unit -> unit) option
+      ; mutable on_navigation_deactivate : (unit -> unit) option
       ; mutable selected_tab : string option
       ; mutable on_select_tab : (string -> unit) option
       ; mutable tabs : rendered_tab list
@@ -1809,6 +1825,8 @@ module For_testing = struct
       ; on_click = None
       ; on_change = None
       ; on_toggle = None
+      ; on_navigation_activate = None
+      ; on_navigation_deactivate = None
       ; selected_tab = None
       ; on_select_tab = None
       ; tabs = []
@@ -2012,6 +2030,11 @@ module For_testing = struct
       view.row_leading_button <- leading_button;
       view.row_actions <- swipe_actions;
       view.row_menu_actions <- menu_actions
+    ;;
+
+    let set_navigation_link_callbacks view ~on_activate ~on_deactivate =
+      view.on_navigation_activate <- on_activate;
+      view.on_navigation_deactivate <- on_deactivate
     ;;
 
     let set_section view ~title =
@@ -2524,11 +2547,34 @@ module For_testing = struct
       show (safe_area_inset_bottom_content_exn (find_exn view ~path))
     ;;
 
+    let navigation_link_label_or_self view =
+      match view.kind, view.children with
+      | Navigation_link, (_, label) :: _ -> label
+      | _ -> view
+    ;;
+
     let click_exn view ~path =
       let view = find_exn view ~path in
       match view.on_click with
       | Some f -> f ()
-      | None -> failwith "View has no click handler"
+      | None ->
+        (match view.on_navigation_activate with
+         | Some f -> f ()
+         | None -> failwith "View has no click handler")
+    ;;
+
+    let activate_navigation_link_exn view ~path =
+      let view = find_exn view ~path in
+      match view.on_navigation_activate with
+      | Some f -> f ()
+      | None -> failwith "View has no navigation activation handler"
+    ;;
+
+    let deactivate_navigation_link_exn view ~path =
+      let view = find_exn view ~path in
+      match view.on_navigation_deactivate with
+      | Some f -> f ()
+      | None -> failwith "View has no navigation deactivation handler"
     ;;
 
     let click_safe_area_inset_bottom_exn view ~path ~inset_path =
@@ -2849,21 +2895,21 @@ module For_testing = struct
     ;;
 
     let click_row_leading_exn view ~path =
-      let view = find_exn view ~path in
+      let view = find_exn view ~path |> navigation_link_label_or_self in
       match view.row_leading_button with
       | Some leading -> leading.on_click ()
       | None -> failwith "View has no row leading button"
     ;;
 
     let click_row_action_exn view ~path ~title =
-      let view = find_exn view ~path in
+      let view = find_exn view ~path |> navigation_link_label_or_self in
       match List.find view.row_actions ~f:(fun action -> String.equal action.title title) with
       | Some action -> action.on_click ()
       | None -> failwithf "View has no row action with title %S" title ()
     ;;
 
     let click_row_menu_action_exn view ~path ~title =
-      let view = find_exn view ~path in
+      let view = find_exn view ~path |> navigation_link_label_or_self in
       match
         List.find view.row_menu_actions ~f:(fun action -> String.equal action.title title)
       with

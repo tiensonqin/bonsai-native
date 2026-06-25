@@ -235,7 +235,12 @@ val picker
   -> picker_option list
   -> node
 val navigation_stack : node list -> node
-val navigation_link : destination:node -> node -> node
+val navigation_link
+  :  ?on_activate:unit Effect.t
+  -> ?on_deactivate:unit Effect.t
+  -> destination:node
+  -> node
+  -> node
 val navigation_split : sidebar:node -> content:node -> detail:node -> node
 val adaptive_layout : compact:node -> regular:node -> node
 val tab : id:string -> title:string -> ?system_image:string -> ?role:tab_role -> node -> tab
@@ -519,6 +524,11 @@ module Renderer : sig
       -> swipe_actions:rendered_row_action list
       -> menu_actions:rendered_row_action list
       -> unit
+    val set_navigation_link_callbacks
+      :  view
+      -> on_activate:(unit -> unit) option
+      -> on_deactivate:(unit -> unit) option
+      -> unit
     val set_section : view -> title:string option -> unit
     val set_picker
       :  view
@@ -590,6 +600,8 @@ module For_testing : sig
     val show_at_path : view -> path:int list -> string
     val show_safe_area_inset_bottom_exn : view -> path:int list -> string
     val click_exn : view -> path:int list -> unit
+    val activate_navigation_link_exn : view -> path:int list -> unit
+    val deactivate_navigation_link_exn : view -> path:int list -> unit
     val click_safe_area_inset_bottom_exn
       :  view
       -> path:int list

@@ -195,6 +195,8 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var spacing: CGFloat?
   @Published var children: [BonsaiNativeNode] = []
   @Published var clickEventId: Int32?
+  @Published var navigationActivateEventId: Int32?
+  @Published var navigationDeactivateEventId: Int32?
   @Published var tapEventId: Int32?
   @Published var changeEventId: Int32?
   @Published var isSearchable = false
@@ -804,6 +806,12 @@ private struct BonsaiNativeNodeView: View {
       NavigationLink {
         if node.children.indices.contains(1) {
           BonsaiNativeNodeView(node: node.children[1], model: model)
+            .onAppear {
+              model.sendClick(node.navigationActivateEventId)
+            }
+            .onDisappear {
+              model.sendClick(node.navigationDeactivateEventId)
+            }
         } else {
           EmptyView()
         }
@@ -2205,6 +2213,17 @@ public func bonsai_native_swiftui_set_on_click(
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.clickEventId = eventId < 0 ? nil : eventId
+}
+
+@_cdecl("bonsai_native_swiftui_set_navigation_link_callbacks")
+public func bonsai_native_swiftui_set_navigation_link_callbacks(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ activateEventId: Int32,
+  _ deactivateEventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.navigationActivateEventId = activateEventId < 0 ? nil : activateEventId
+  node.navigationDeactivateEventId = deactivateEventId < 0 ? nil : deactivateEventId
 }
 
 @_cdecl("bonsai_native_swiftui_set_tap_action")
