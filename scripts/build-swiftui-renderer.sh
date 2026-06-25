@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TARGET="${IOS_TARGET:-arm64-apple-ios17.0-simulator}"
-SDKROOT="${IOS_SDKROOT:-$(xcrun --sdk iphonesimulator --show-sdk-path)}"
+SDK_NAME="${SWIFT_SDK:-iphonesimulator}"
+TARGET="${SWIFT_TARGET:-${IOS_TARGET:-arm64-apple-ios17.0-simulator}}"
+SDKROOT="${SWIFT_SDKROOT:-${IOS_SDKROOT:-$(xcrun --sdk "$SDK_NAME" --show-sdk-path)}}"
+SOURCE="${SWIFT_SOURCE:-apple/swiftui/BonsaiNativeSwiftUI.swift}"
 OUTPUT="${1:-/tmp/BonsaiNativeSwiftUI.o}"
 if [[ "$OUTPUT" != /* ]]; then
   OUTPUT="$PWD/$OUTPUT"
@@ -17,5 +19,5 @@ xcrun swiftc \
   ${SWIFT_FLAGS:-} \
   -parse-as-library \
   -emit-object \
-  "$REPO_ROOT/apple/swiftui/BonsaiNativeSwiftUI.swift" \
+  "$REPO_ROOT/$SOURCE" \
   -o "$OUTPUT"

@@ -25,6 +25,19 @@
   (run /bin/sh ../../scripts/build-swiftui-renderer.sh %{targets})))
 
 (rule
+ (targets BonsaiNativeSwiftUIMac.o)
+ (deps
+  ../../scripts/build-swiftui-renderer.sh
+  ../swiftui/BonsaiNativeSwiftUIMac.swift)
+ (enabled_if
+  (= %{context_name} default))
+ (action
+  (run
+   /bin/sh
+   -c
+   "SWIFT_SOURCE=apple/swiftui/BonsaiNativeSwiftUIMac.swift SWIFT_SDK=macosx SWIFT_TARGET=${MACOS_TARGET:-$(uname -m)-apple-macosx14.0} /bin/sh ../../scripts/build-swiftui-renderer.sh BonsaiNativeSwiftUIMac.o")))
+
+(rule
  (targets swiftui_link_flags.sexp)
  (deps BonsaiNativeSwiftUI.o)
  (enabled_if
@@ -37,6 +50,16 @@
   (with-stdout-to
    %{targets}
    (run /bin/sh -c "printf '(-ccopt \"%s\")' \"$PWD/BonsaiNativeSwiftUI.o\""))))
+
+(rule
+ (targets swiftui_mac_link_flags.sexp)
+ (deps BonsaiNativeSwiftUIMac.o)
+ (enabled_if
+  (= %{context_name} default))
+ (action
+  (with-stdout-to
+   %{targets}
+   (run /bin/sh -c "printf '(-ccopt \"%s\")' \"$PWD/BonsaiNativeSwiftUIMac.o\""))))
 
 (executable
  (name ios_app)
@@ -80,6 +103,35 @@
   "-framework Vision"
   -ccopt
   "-framework Security")
+ (libraries
+  bonsai_apple
+  bonsai_apple_swiftui
+  xxx
+  core
+  core_kernel.caml_threads
+  threads.posix)
+ (preprocess
+  (pps ppx_jane bonsai.ppx_bonsai)))
+
+(executable
+ (name mac_app)
+ (modules mac_app)
+ (link_deps BonsaiNativeSwiftUIMac.o)
+ (enabled_if
+  (= %{context_name} default))
+ (flags
+  :standard
+  -ccopt
+  "-Wl,-dead_strip"
+  (:include swiftui_mac_link_flags.sexp)
+  -ccopt
+  "-framework AppKit"
+  -ccopt
+  "-framework SwiftUI"
+  -ccopt
+  "-framework Foundation"
+  -ccopt
+  "-framework UniformTypeIdentifiers")
  (libraries
   bonsai_apple
   bonsai_apple_swiftui
@@ -155,3 +207,42 @@
      /bin/sh
      -c
      "codesign --force --sign \"$(%{dep:../../../scripts/apple-codesign-identity.sh})\" --timestamp=none BonsaiNativeDemos")))))
+
+(subdir
+ BonsaiNativeMacDemos.app
+ (rule
+  (alias default)
+  (deps
+   Contents/Info.plist
+   Contents/MacOS/BonsaiNativeMacDemos)
+  (enabled_if
+   (= %{context_name} default))
+  (action
+   (progn)))
+ (subdir
+  Contents
+  (rule
+   (deps ../../Info.mac.plist)
+   (targets Info.plist)
+   (enabled_if
+    (= %{context_name} default))
+   (action
+    (copy ../../Info.mac.plist Info.plist)))
+  (subdir
+   MacOS
+   (rule
+    (deps
+     ../../../mac_app.exe
+     ../../../../../scripts/apple-codesign-identity.sh)
+    (targets BonsaiNativeMacDemos)
+    (enabled_if
+     (= %{context_name} default))
+    (action
+     (progn
+      (copy ../../../mac_app.exe BonsaiNativeMacDemos)
+      (run chmod u+w BonsaiNativeMacDemos)
+      (run strip -x BonsaiNativeMacDemos)
+      (run
+       /bin/sh
+       -c
+       "codesign --force --sign \"$(%{dep:../../../../../scripts/apple-codesign-identity.sh})\" --timestamp=none BonsaiNativeMacDemos")))))))

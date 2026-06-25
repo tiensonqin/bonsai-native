@@ -102,6 +102,16 @@ private struct BonsaiNativeMenuAction: Identifiable {
   let eventId: Int32?
 }
 
+private struct BonsaiNativeToolbarItem: Identifiable {
+  let id: String
+  let title: String
+  let systemImage: String?
+  let isTitleVisible: Bool
+  let eventId: Int32?
+  let isEnabled: Bool
+  var menuActions: [BonsaiNativeRowAction]
+}
+
 private final class BonsaiNativeNode: ObservableObject, Identifiable {
   let id = UUID()
   let kind: NodeKind
@@ -152,6 +162,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var confirmationDialogDismissEventId: Int32?
   @Published var confirmationDialogActions: [BonsaiNativeAlertAction] = []
   @Published var navigationTitle: String?
+  @Published var toolbarItems: [BonsaiNativeToolbarItem] = []
   @Published var padding: EdgeInsets?
   @Published var regularMaterialPanelCornerRadius: CGFloat?
   @Published var frameWidth: CGFloat?
@@ -1479,6 +1490,64 @@ public func bonsai_native_swiftui_set_navigation_title(
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.navigationTitle = titlePointer.map(String.init(cString:))
+}
+
+@_cdecl("bonsai_native_swiftui_clear_toolbar")
+public func bonsai_native_swiftui_clear_toolbar(_ pointer: UnsafeMutableRawPointer?) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.toolbarItems = []
+}
+
+@_cdecl("bonsai_native_swiftui_append_toolbar_item")
+public func bonsai_native_swiftui_append_toolbar_item(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ isTitleVisible: Bool,
+  _ isEnabled: Bool,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer), let idPointer, let titlePointer else { return }
+  node.toolbarItems.append(
+    BonsaiNativeToolbarItem(
+      id: String(cString: idPointer),
+      title: String(cString: titlePointer),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      isTitleVisible: isTitleVisible,
+      eventId: eventId < 0 ? nil : eventId,
+      isEnabled: isEnabled,
+      menuActions: []
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_append_toolbar_menu_action")
+public func bonsai_native_swiftui_append_toolbar_menu_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ itemIdPointer: UnsafePointer<CChar>?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ style: Int32,
+  _ eventId: Int32,
+  _ exportFilenamePointer: UnsafePointer<CChar>?,
+  _ exportContentTypePointer: UnsafePointer<CChar>?,
+  _ exportContentPointer: UnsafePointer<CChar>?
+) {
+  guard let node = nativeNode(from: pointer), let itemIdPointer, let titlePointer else { return }
+  let itemId = String(cString: itemIdPointer)
+  guard let index = node.toolbarItems.firstIndex(where: { $0.id == itemId }) else { return }
+  node.toolbarItems[index].menuActions.append(
+    BonsaiNativeRowAction(
+      title: String(cString: titlePointer),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      style: style,
+      eventId: eventId < 0 ? nil : eventId,
+      exportFilename: exportFilenamePointer.map(String.init(cString:)),
+      exportContentType: exportContentTypePointer.map(String.init(cString:)),
+      exportContent: exportContentPointer.map(String.init(cString:))
+    )
+  )
 }
 
 @_cdecl("bonsai_native_swiftui_set_padding")
