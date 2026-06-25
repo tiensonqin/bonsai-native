@@ -53,6 +53,7 @@ private enum NodeKind: Int32 {
   case adaptiveLayout = 21
   case toggle = 22
   case shareLink = 23
+  case navigationLink = 24
 }
 
 private let bonsaiLightBackgroundComponent: CGFloat = 0.965
@@ -634,6 +635,21 @@ private struct BonsaiNativeNodeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+    case .navigationLink:
+      NavigationLink {
+        if node.children.indices.contains(1) {
+          BonsaiNativeNodeView(node: node.children[1], model: model)
+        } else {
+          EmptyView()
+        }
+      } label: {
+        if node.children.indices.contains(0) {
+          BonsaiNativeNodeView(node: node.children[0], model: model)
+        } else {
+          EmptyView()
+        }
+      }
 
     case .navigationSplit:
       navigationSplitView

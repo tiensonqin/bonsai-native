@@ -34,6 +34,7 @@ private enum NodeKind: Int32 {
   case adaptiveLayout = 21
   case toggle = 22
   case shareLink = 23
+  case navigationLink = 24
 }
 
 private struct BonsaiNativeRowAction: Identifiable {
@@ -296,6 +297,12 @@ private struct BonsaiNativeNodeView: View {
       List { childViews }
     case .navigationStack:
       NavigationStack { childViews }
+    case .navigationLink:
+      NavigationLink {
+        child(at: 1)
+      } label: {
+        child(at: 0)
+      }
     case .navigationSplit:
       NavigationSplitView {
         child(at: 0)

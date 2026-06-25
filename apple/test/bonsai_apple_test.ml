@@ -305,6 +305,39 @@ let%test_unit "list row renders generic metadata and schedules actions" =
   [%test_result: int] !scheduled ~expect:4
 ;;
 
+let%test_unit "navigation link renders a label and destination" =
+  Backend.reset ();
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> ())
+      (Apple.navigation_stack
+         [ Apple.navigation_link
+             ~destination:(Apple.text "Add card form" |> Apple.navigation_title "Add card")
+             (Apple.list_row
+                { title = "Add card"
+                ; subtitle = None
+                ; trailing_text = None
+                ; leading_system_image = Some "plus"
+                ; preview_image_path = None
+                ; content_style = Apple.Standard
+                ; accessory = Apple.Disclosure_indicator
+                ; title_strikethrough = false
+                ; on_click = None
+                ; leading_button = None
+                ; swipe_actions = []
+                ; menu_actions = []
+                })
+         ])
+  in
+  require_string_equal
+    (show mounted)
+    ~expect:
+      {|navigation-stack#1
+  navigation-link#2
+    label:
+      list-row#4 title="Add card" subtitle=() trailing=() style=Standard accessory=Disclosure_indicator strikethrough=false leading-image=plus preview-image=none leading=none actions=[] menu=[]|}
+;;
+
 let%test_unit "text editor renders multiline text and schedules changes" =
   Backend.reset ();
   let scheduled = ref 0 in

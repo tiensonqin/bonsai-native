@@ -199,6 +199,7 @@ type backend_kind =
   | Scroll_view
   | List
   | Navigation_stack
+  | Navigation_link
   | Navigation_split
   | Adaptive_layout
   | Tab_view
@@ -251,6 +252,10 @@ type node =
   | Scroll_view_node of node
   | List_node of keyed_node list
   | Navigation_stack_node of node list
+  | Navigation_link_node of
+      { label : node
+      ; destination : node
+      }
   | Navigation_split_node of
       { sidebar : node
       ; content : node
@@ -442,6 +447,8 @@ let picker ~title ~selected ~on_select (options : picker_option list) =
 ;;
 
 let navigation_stack children = Navigation_stack_node children
+
+let navigation_link ~destination label = Navigation_link_node { label; destination }
 
 let navigation_split ~sidebar ~content ~detail =
   Navigation_split_node { sidebar; content; detail }
@@ -696,6 +703,7 @@ let backend_kind = function
   | Scroll_view_node _ -> Scroll_view
   | List_node _ -> List
   | Navigation_stack_node _ -> Navigation_stack
+  | Navigation_link_node _ -> Navigation_link
   | Navigation_split_node _ -> Navigation_split
   | Adaptive_layout_node _ -> Adaptive_layout
   | Tab_view_node _ -> Tab_view
@@ -873,6 +881,11 @@ module Renderer = struct
                : (string * string) list) )]
         | Navigation_stack_node children ->
           [%sexp "navigation-stack", (List.map children ~f:fingerprint : string list)]
+        | Navigation_link_node { label; destination } ->
+          [%sexp
+            "navigation-link"
+          , (fingerprint label : string)
+          , (fingerprint destination : string)]
         | Navigation_split_node { sidebar; content; detail } ->
           [%sexp
             "navigation-split"
@@ -1000,6 +1013,7 @@ module Renderer = struct
       | Scroll_view_node _
       | List_node _
       | Navigation_stack_node _
+      | Navigation_link_node _
       | Navigation_split_node _
       | Adaptive_layout_node _
       | Section_node _
@@ -1087,6 +1101,10 @@ module Renderer = struct
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          reconcile_positional t children
+       | Navigation_link_node { label; destination } ->
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         reconcile_positional t [ label; destination ]
        | Navigation_split_node { sidebar; content; detail } ->
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
@@ -1812,6 +1830,7 @@ module For_testing = struct
       | Scroll_view -> "scroll-view"
       | List -> "list"
       | Navigation_stack -> "navigation-stack"
+      | Navigation_link -> "navigation-link"
       | Navigation_split -> "navigation-split"
       | Adaptive_layout -> "adaptive-layout"
       | Tab_view -> "tab-view"
@@ -2067,8 +2086,13 @@ module For_testing = struct
       in
       let list_row = Option.value view.list_row ~default:"" in
       let child_lines =
-        List.concat_map view.children ~f:(fun (key, child) ->
-          show_lines ?key child ~indent:(indent + 2))
+        match view.kind, view.children with
+        | Navigation_link, [ (_, label); _ ] ->
+          (spaces ^ "  label:")
+          :: show_lines label ~indent:(indent + 4)
+        | _ ->
+          List.concat_map view.children ~f:(fun (key, child) ->
+            show_lines ?key child ~indent:(indent + 2))
       in
       let sheet_lines =
         List.concat_map view.modifiers ~f:(function
@@ -2121,6 +2145,8 @@ module For_testing = struct
          | Some (_, child) -> find_exn child ~path:rest
          | None -> failwithf "No child at index %d" index ())
     ;;
+
+    let show_at_path view ~path = show (find_exn view ~path)
 
     let click_exn view ~path =
       let view = find_exn view ~path in
@@ -2293,6 +2319,13 @@ module For_testing = struct
     let click_sheet_toolbar_item_exn view ~path ~id =
       let view = find_exn view ~path in
       click_toolbar_item_exn (presented_sheet_content_exn view) ~path:[] ~id
+    ;;
+
+    let click_nested_sheet_toolbar_item_exn view ~path ~host_path ~id =
+      click_toolbar_item_exn
+        (presented_sheet_content_exn (nested_sheet_host_exn view ~path ~host_path))
+        ~path:[]
+        ~id
     ;;
 
     let click_toolbar_menu_action_exn view ~path ~id ~title =

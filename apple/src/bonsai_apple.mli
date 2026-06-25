@@ -212,6 +212,7 @@ val picker
   -> picker_option list
   -> node
 val navigation_stack : node list -> node
+val navigation_link : destination:node -> node -> node
 val navigation_split : sidebar:node -> content:node -> detail:node -> node
 val adaptive_layout : compact:node -> regular:node -> node
 val tab : id:string -> title:string -> ?system_image:string -> ?role:tab_role -> node -> tab
@@ -315,6 +316,7 @@ type backend_kind =
   | Scroll_view
   | List
   | Navigation_stack
+  | Navigation_link
   | Navigation_split
   | Adaptive_layout
   | Tab_view
@@ -499,6 +501,7 @@ module For_testing : sig
     val stats : unit -> Stats.t
     val diff_stats : Stats.t -> Stats.t -> Stats.t
     val show : view -> string
+    val show_at_path : view -> path:int list -> string
     val click_exn : view -> path:int list -> unit
     val change_text_exn : view -> path:int list -> text:string -> unit
     val change_toggle_exn : view -> path:int list -> is_on:bool -> unit
@@ -547,6 +550,12 @@ module For_testing : sig
       -> path:int list
       -> host_path:int list
       -> sheet_path:int list
+      -> unit
+    val click_nested_sheet_toolbar_item_exn
+      :  view
+      -> path:int list
+      -> host_path:int list
+      -> id:string
       -> unit
     val change_nested_sheet_text_exn
       :  view

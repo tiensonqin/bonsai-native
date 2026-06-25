@@ -444,6 +444,7 @@ let node_kind_id = function
   | Apple.Scroll_view -> 6
   | Apple.List -> 7
   | Apple.Navigation_stack -> 8
+  | Apple.Navigation_link -> 24
   | Apple.Navigation_split -> 20
   | Apple.Adaptive_layout -> 21
   | Apple.Tab_view -> 9
