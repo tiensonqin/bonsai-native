@@ -78,8 +78,6 @@ private struct BonsaiHeaderIconChrome: ViewModifier {
     content
       .frame(width: 34, height: 34)
       .contentShape(Circle())
-      .background(.thinMaterial, in: Circle())
-      .shadow(color: .black.opacity(0.08), radius: 18, y: 8)
   }
 }
 

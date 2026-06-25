@@ -2299,6 +2299,11 @@ module For_testing = struct
         | _, tabs ->
           " tabs=[" ^ String.concat ~sep:"," (List.map tabs ~f:tab_name) ^ "]"
       in
+      let compact_top_bar =
+        match view.kind with
+        | Sidebar_split -> " compact-top-bar=chatgpt-like-menu header-button-chrome=plain-circle"
+        | _ -> ""
+      in
       let sidebar_action_name (action : rendered_sidebar_action) =
         let image =
           match action.system_image with
@@ -2396,6 +2401,7 @@ module For_testing = struct
        ^ enabled
        ^ selected
        ^ tabs
+       ^ compact_top_bar
        ^ sidebar_header_action
        ^ sidebar_actions
        ^ sidebar_bottom_search
