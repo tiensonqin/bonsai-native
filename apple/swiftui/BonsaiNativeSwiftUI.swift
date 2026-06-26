@@ -1461,6 +1461,11 @@ private struct BonsaiNativeNodeView: View {
           EmptyView()
         }
       }
+      .simultaneousGesture(
+        TapGesture().onEnded {
+          model.sendClick(node.navigationActivateEventId)
+        }
+      )
 
     case .navigationSplit:
       navigationSplitView
