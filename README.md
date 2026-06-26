@@ -49,9 +49,11 @@ updates stay shared above the platform renderer.
 - `native/`: shared `bonsai_native` implementation.
 - `src/`: Android OCaml facade.
 - `android/`: Gradle/Compose demo app.
+- `android/examples/`: Android demo components, native entrypoint, and asset
+  export helpers.
 - `jni/`: Android JNI bridge into OCaml.
 - `apple/`: Apple OCaml package, SwiftUI backend, and iOS/macOS examples.
-- `examples/`: Android demo entrypoints and smoke examples.
+- `web/demo/`: browser demo for the shared Android demo components.
 - `scripts/`: Android and iOS bootstrap/build helpers.
 - `docs/`: architecture and platform build notes.
 

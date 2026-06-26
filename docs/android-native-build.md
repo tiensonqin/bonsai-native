@@ -62,7 +62,7 @@ scripts/build-android-native.sh
 The script builds:
 
 ```sh
-dune build -x android examples/android_counter_entry.so
+dune build -x android android/examples/android_counter_entry.so
 ```
 
 and copies the result to Gradle's `jniLibs` input.

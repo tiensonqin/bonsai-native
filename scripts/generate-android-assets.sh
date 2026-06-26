@@ -10,7 +10,7 @@ mkdir -p "$asset_dir"
 
 for demo_id in counter todo search; do
   opam exec --switch="$opam_switch" -- \
-    dune exec "$repo_root/examples/export_counter_json.exe" -- "$demo_id" \
+    dune exec "$repo_root/android/examples/export_counter_json.exe" -- "$demo_id" \
     > "$asset_dir/bonsai_${demo_id}.json"
   echo "Generated $asset_dir/bonsai_${demo_id}.json"
 done

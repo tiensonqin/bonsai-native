@@ -9,7 +9,7 @@ dune_target=${BONSAI_ANDROID_DUNE_TARGET:-android}
 opam_switch=${BONSAI_ANDROID_OPAM_SWITCH:-${BONSAI_NATIVE_OPAM_SWITCH:-$repo_root}}
 native_lib_name=libbonsai_android_counter.so
 out_dir="$repo_root/android/_build/android/jniLibs/$android_abi"
-artifact="$repo_root/_build/default.$dune_target/examples/android_counter_entry.so"
+artifact="$repo_root/_build/default.$dune_target/android/examples/android_counter_entry.so"
 
 die() {
   echo "error: $*" >&2
@@ -41,7 +41,7 @@ if ! opam exec --switch="$opam_switch" -- ocamlfind -toolchain "$dune_target" pr
 fi
 
 opam exec --switch="$opam_switch" -- \
-  dune build -x "$dune_target" examples/android_counter_entry.so --display short
+  dune build -x "$dune_target" android/examples/android_counter_entry.so --display short
 
 require_file "$artifact" "expected Dune artifact was not produced: $artifact"
 
