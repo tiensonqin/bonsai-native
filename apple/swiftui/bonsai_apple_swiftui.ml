@@ -216,6 +216,12 @@ external set_native_text_field_style
   -> unit
   = "bonsai_apple_swiftui_set_text_field_style"
 
+external set_native_text_field_axis
+  :  native
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_text_field_axis"
+
 external set_native_text_field_secure
   :  native
   -> bool
@@ -1075,6 +1081,15 @@ module Backend = struct
 
   let set_text_field_style view style =
     set_native_text_field_style view.native (text_field_style_id style)
+  ;;
+
+  let text_field_axis_id = function
+    | Apple.Horizontal -> 0
+    | Apple.Vertical -> 1
+  ;;
+
+  let set_text_field_axis view axis =
+    set_native_text_field_axis view.native (text_field_axis_id axis)
   ;;
 
   let set_text_field_secure view is_secure =

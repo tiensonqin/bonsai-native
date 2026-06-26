@@ -153,6 +153,10 @@ type text_field_style =
   | Pill
   | Plain_text
 
+type axis =
+  | Vertical
+  | Horizontal
+
 type button_style =
   | Bordered
   | Bordered_prominent
@@ -264,6 +268,7 @@ val button_label : ?is_enabled:bool -> on_click:unit Action.t -> node -> node
 val text_field
   :  ?placeholder:string
   -> ?style:text_field_style
+  -> ?axis:axis
   -> ?is_secure:bool
   -> ?on_submit:unit Action.t
   -> text:string
@@ -535,10 +540,6 @@ val confirmation_dialog
   -> node
   -> node
 
-type axis =
-  | Vertical
-  | Horizontal
-
 type backend_kind =
   | Label
   | Button
@@ -732,6 +733,7 @@ module Renderer : sig
     val set_text_attributes : view -> text_attributes -> unit
     val set_placeholder : view -> string option -> unit
     val set_text_field_style : view -> text_field_style -> unit
+    val set_text_field_axis : view -> axis -> unit
     val set_text_field_secure : view -> bool -> unit
     val set_toggle : view -> is_on:bool -> on_change:(bool -> unit) -> unit
     val set_progress : view -> value:float -> unit

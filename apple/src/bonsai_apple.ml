@@ -544,6 +544,7 @@ type node =
       { text : string
       ; placeholder : string option
       ; style : text_field_style
+      ; axis : axis
       ; is_secure : bool
       ; on_change : string -> unit Action.t
       ; on_submit : unit Action.t option
@@ -932,6 +933,11 @@ let text_field_style_name = function
   | Plain_text -> "plain"
 ;;
 
+let axis_name = function
+  | Vertical -> "vertical"
+  | Horizontal -> "horizontal"
+;;
+
 let text ?(style = Body) ?(weight = Regular) ?(color = Primary) value =
   Text { text = value; attributes = { style; weight; color } }
 ;;
@@ -955,13 +961,14 @@ let button_label ?(is_enabled = true) ~on_click label =
 let text_field
   ?placeholder
   ?(style = Rounded_border)
+  ?(axis = Horizontal)
   ?(is_secure = false)
   ?on_submit
   ~text
   ~on_change
   ()
   =
-  Text_field_node { text; placeholder; style; is_secure; on_change; on_submit }
+  Text_field_node { text; placeholder; style; axis; is_secure; on_change; on_submit }
 ;;
 
 let toggle title ~is_on ~on_change = Toggle_node { title; is_on; on_change }
@@ -1523,6 +1530,7 @@ module Renderer = struct
     val set_text_attributes : view -> text_attributes -> unit
     val set_placeholder : view -> string option -> unit
     val set_text_field_style : view -> text_field_style -> unit
+    val set_text_field_axis : view -> axis -> unit
     val set_text_field_secure : view -> bool -> unit
     val set_toggle : view -> is_on:bool -> on_change:(bool -> unit) -> unit
     val set_progress : view -> value:float -> unit
@@ -1777,8 +1785,17 @@ module Renderer = struct
           ^ bool is_enabled
         | Button_label_node { label; is_enabled; on_click = _ } ->
           "button-label:" ^ bool is_enabled ^ ":" ^ fingerprint label
-        | Text_field_node { text; placeholder; style; is_secure; on_change = _; on_submit = _ } ->
-          "text-field:" ^ text ^ ":" ^ opt placeholder ^ ":" ^ string_of_int (Obj.magic style) ^ ":" ^ bool is_secure
+        | Text_field_node { text; placeholder; style; axis; is_secure; on_change = _; on_submit = _ } ->
+          "text-field:"
+          ^ text
+          ^ ":"
+          ^ opt placeholder
+          ^ ":"
+          ^ text_field_style_name style
+          ^ ":"
+          ^ axis_name axis
+          ^ ":"
+          ^ bool is_secure
         | Toggle_node { title; is_on; on_change = _ } -> "toggle:" ^ title ^ ":" ^ bool is_on
         | Text_editor_node { text; placeholder; on_change = _ } -> "text-editor:" ^ text ^ ":" ^ opt placeholder
         | Progress_view_node { value } -> "progress-view:" ^ float value
@@ -2011,10 +2028,11 @@ module Renderer = struct
            (if is_enabled then Some (fun () -> t.schedule_event on_click) else None);
          Backend.set_on_change t.view None;
          reconcile_positional t [ label ]
-       | Text_field_node { text; placeholder; style; is_secure; on_change; on_submit } ->
+       | Text_field_node { text; placeholder; style; axis; is_secure; on_change; on_submit } ->
          Backend.set_text t.view text;
          Backend.set_placeholder t.view placeholder;
          Backend.set_text_field_style t.view style;
+         Backend.set_text_field_axis t.view axis;
          Backend.set_text_field_secure t.view is_secure;
          Backend.set_on_click
            t.view
@@ -2650,6 +2668,7 @@ module For_testing = struct
       ; mutable text_attributes : text_attributes
       ; mutable placeholder : string option
       ; mutable text_field_style : text_field_style
+      ; mutable text_field_axis : axis
       ; mutable text_field_secure : bool
       ; mutable toggle_is_on : bool
       ; mutable progress_value : float option
@@ -2761,6 +2780,7 @@ module For_testing = struct
       ; text_attributes = default_text_attributes
       ; placeholder = None
       ; text_field_style = Rounded_border
+      ; text_field_axis = Horizontal
       ; text_field_secure = false
       ; toggle_is_on = false
       ; progress_value = None
@@ -2873,6 +2893,11 @@ module For_testing = struct
     let set_text_field_style view style =
       mutate ();
       view.text_field_style <- style
+    ;;
+
+    let set_text_field_axis view axis =
+      mutate ();
+      view.text_field_axis <- axis
     ;;
 
     let set_text_field_secure view is_secure =
@@ -3303,6 +3328,11 @@ module For_testing = struct
       let text_field_chrome =
         match view.kind, view.text_field_style with
         | Text_field, Pill -> " chrome=liquid-glass corner-radius=26"
+        | _ -> ""
+      in
+      let text_field_axis =
+        match view.kind, view.text_field_axis with
+        | Text_field, Vertical -> " axis=vertical"
         | _ -> ""
       in
       let text_field_secure =
@@ -3906,6 +3936,7 @@ module For_testing = struct
        ^ placeholder
        ^ text_field_style
        ^ text_field_chrome
+       ^ text_field_axis
        ^ text_field_secure
        ^ toggle_selected
        ^ progress

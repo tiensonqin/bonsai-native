@@ -514,6 +514,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var textWeight: Int32 = 0
   @Published var textColor: Int32 = 0
   @Published var textFieldStyle: Int32 = 0
+  @Published var textFieldAxis: Int32 = 0
   @Published var isTextFieldSecure = false
   @Published var isToggleOn = false
   @Published var progressValue: Double = 0
@@ -1219,16 +1220,30 @@ private struct BonsaiNativeTextFieldView: View {
           )
         )
       } else {
-        TextField(
-          node.placeholder ?? "",
-          text: Binding(
-            get: { node.text },
-            set: { value in
-              node.text = value
-              model.sendChange(node.changeEventId, text: value)
-            }
+        if node.textFieldAxis == 1 {
+          TextField(
+            node.placeholder ?? "",
+            text: Binding(
+              get: { node.text },
+              set: { value in
+                node.text = value
+                model.sendChange(node.changeEventId, text: value)
+              }
+            ),
+            axis: .vertical
           )
-        )
+        } else {
+          TextField(
+            node.placeholder ?? "",
+            text: Binding(
+              get: { node.text },
+              set: { value in
+                node.text = value
+                model.sendChange(node.changeEventId, text: value)
+              }
+            )
+          )
+        }
       }
     }
     .onSubmit {
@@ -3242,6 +3257,15 @@ public func bonsai_native_swiftui_set_text_field_style(
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.textFieldStyle = style
+}
+
+@_cdecl("bonsai_native_swiftui_set_text_field_axis")
+public func bonsai_native_swiftui_set_text_field_axis(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ axis: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.textFieldAxis = axis
 }
 
 @_cdecl("bonsai_native_swiftui_set_text_field_secure")

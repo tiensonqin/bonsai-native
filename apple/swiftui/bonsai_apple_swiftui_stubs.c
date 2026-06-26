@@ -43,6 +43,7 @@ extern void bonsai_native_swiftui_set_text_attributes(
 extern void bonsai_native_swiftui_set_enabled(void *node, bool is_enabled);
 extern void bonsai_native_swiftui_set_placeholder(void *node, const char *text);
 extern void bonsai_native_swiftui_set_text_field_style(void *node, int32_t style);
+extern void bonsai_native_swiftui_set_text_field_axis(void *node, int32_t axis);
 extern void bonsai_native_swiftui_set_text_field_secure(void *node, bool is_secure);
 extern void bonsai_native_swiftui_set_toggle(void *node, bool is_on, int32_t event_id);
 extern void bonsai_native_swiftui_set_progress(void *node, double value);
@@ -669,6 +670,13 @@ CAMLprim value bonsai_apple_swiftui_set_text_field_style(value node, value style
 {
   CAMLparam2(node, style);
   bonsai_native_swiftui_set_text_field_style(pointer_val(node), Int_val(style));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_text_field_axis(value node, value axis)
+{
+  CAMLparam2(node, axis);
+  bonsai_native_swiftui_set_text_field_axis(pointer_val(node), Int_val(axis));
   CAMLreturn(Val_unit);
 }
 

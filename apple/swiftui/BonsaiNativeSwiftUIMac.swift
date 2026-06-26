@@ -282,6 +282,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var textWeight: Int32 = 0
   @Published var textColor: Int32 = 0
   @Published var textFieldStyle: Int32 = 0
+  @Published var textFieldAxis: Int32 = 0
   @Published var isTextFieldSecure = false
   @Published var isToggleOn = false
   @Published var progressValue: Double = 0
@@ -1634,6 +1635,11 @@ public func bonsai_native_swiftui_set_placeholder(_ pointer: UnsafeMutableRawPoi
 @_cdecl("bonsai_native_swiftui_set_text_field_style")
 public func bonsai_native_swiftui_set_text_field_style(_ pointer: UnsafeMutableRawPointer?, _ style: Int32) {
   nativeNode(from: pointer)?.textFieldStyle = style
+}
+
+@_cdecl("bonsai_native_swiftui_set_text_field_axis")
+public func bonsai_native_swiftui_set_text_field_axis(_ pointer: UnsafeMutableRawPointer?, _ axis: Int32) {
+  nativeNode(from: pointer)?.textFieldAxis = axis
 }
 
 @_cdecl("bonsai_native_swiftui_set_text_field_secure")
