@@ -3,10 +3,7 @@ module Action = struct
 
   let ignore () = ()
   let of_thunk f = f
-
-  let many actions () =
-    Stdlib.List.iter (fun action -> Stdlib.ignore (action ())) actions
-  ;;
+  let many actions () = Stdlib.List.iter (fun action -> Stdlib.ignore (action ())) actions
 end
 
 let clipboard_text_for_testing = ref None
@@ -23,15 +20,16 @@ type audio_recording_result =
   }
 
 let default_clipboard_text_handler text = clipboard_text_for_testing := Some text
+
 let default_clipboard_image_file_handler path =
   clipboard_image_file_for_testing := Some path
 ;;
 
 let default_toggle_audio_file_playback_handler path =
   playing_audio_file_for_testing
-  := (match !playing_audio_file_for_testing with
-      | Some current when String.equal current path -> None
-      | _ -> Some path)
+  := match !playing_audio_file_for_testing with
+     | Some current when String.equal current path -> None
+     | _ -> Some path
 ;;
 
 let default_audio_recording_result =
@@ -63,9 +61,14 @@ let copy_text_to_clipboard text () = !clipboard_text_handler text
 let copy_image_file_to_clipboard path () = !clipboard_image_file_handler path
 let toggle_audio_file_playback path () = !toggle_audio_file_playback_handler path
 let start_audio_recording () = !start_audio_recording_handler ()
-let stop_audio_recording_and_transcribe () = !stop_audio_recording_and_transcribe_handler ()
+
+let stop_audio_recording_and_transcribe () =
+  !stop_audio_recording_and_transcribe_handler ()
+;;
+
 let set_clipboard_text_handler handler = clipboard_text_handler := handler
 let set_clipboard_image_file_handler handler = clipboard_image_file_handler := handler
+
 let set_toggle_audio_file_playback_handler handler =
   toggle_audio_file_playback_handler := handler
 ;;
@@ -100,6 +103,7 @@ module Option = struct
   let bind t ~f = bind t f
   let iter t ~f = iter f t
   let value t ~default = value ~default t
+
   let is_some = function
     | Some _ -> true
     | None -> false
@@ -125,6 +129,7 @@ module List = struct
   let concat_map t ~f = concat_map f t
   let zip_exn left right = combine left right
   let nth t index = nth_opt t index
+
   let is_empty = function
     | [] -> true
     | _ :: _ -> false
@@ -201,21 +206,19 @@ module String = struct
     let of_alist_reduce ~f entries =
       List.fold_left
         (fun map (key, value) ->
-          update key
-            (function
-              | None -> Some value
-              | Some old -> Some (f old value))
-            map)
+           update
+             key
+             (function
+               | None -> Some value
+               | Some old -> Some (f old value))
+             map)
         empty
         entries
     ;;
   end
 
   let of_char char = make 1 char
-
-  let concat ~sep values =
-    Stdlib.String.concat sep values
-  ;;
+  let concat ~sep values = Stdlib.String.concat sep values
 
   let concat_map value ~f =
     let buffer = Buffer.create (length value) in
@@ -249,11 +252,7 @@ module Map = struct
 end
 
 let sprintf = Printf.sprintf
-
-let failwithf format =
-  Printf.ksprintf (fun message () -> failwith message) format
-;;
-
+let failwithf format = Printf.ksprintf (fun message () -> failwith message) format
 let quoted value = "\"" ^ String.escaped value ^ "\""
 
 let option_text = function
@@ -746,6 +745,7 @@ and modifier =
       }
   | Toolbar of toolbar_item list
   | Tap_action of { on_click : unit Action.t }
+  | On_appear of { on_appear : unit Action.t }
   | Keyboard_dismiss_controls
   | Scroll_dismisses_keyboard
   | Safe_area_inset_bottom of { content : node }
@@ -801,6 +801,7 @@ type 'view rendered_modifier =
       }
   | Rendered_toolbar of toolbar_item list
   | Rendered_tap_action of { on_click : unit Action.t }
+  | Rendered_on_appear of { on_appear : unit Action.t }
   | Rendered_keyboard_dismiss_controls
   | Rendered_scroll_dismisses_keyboard
   | Rendered_safe_area_inset_bottom of { content : 'view }
@@ -930,7 +931,11 @@ let sidebar_action_chrome_name = function
 ;;
 
 let text_attributes_name (attributes : text_attributes) =
-  text_style_name attributes.style ^ ":" ^ text_weight_name attributes.weight ^ ":" ^ text_color_name attributes.color
+  text_style_name attributes.style
+  ^ ":"
+  ^ text_weight_name attributes.weight
+  ^ ":"
+  ^ text_color_name attributes.color
 ;;
 
 let text_field_style_name = function
@@ -949,15 +954,16 @@ let text ?(style = Body) ?(weight = Regular) ?(color = Primary) value =
 ;;
 
 let button
-  ?(is_enabled = true)
-  ?(style = Bordered)
-  ?system_image
-  ?subtitle
-  ?(is_title_visible = true)
-  title
-  ~on_click
+      ?(is_enabled = true)
+      ?(style = Bordered)
+      ?system_image
+      ?subtitle
+      ?(is_title_visible = true)
+      title
+      ~on_click
   =
-  Button_node { title; system_image; subtitle; style; is_title_visible; is_enabled; on_click }
+  Button_node
+    { title; system_image; subtitle; style; is_title_visible; is_enabled; on_click }
 ;;
 
 let button_label ?(is_enabled = true) ~on_click label =
@@ -965,14 +971,14 @@ let button_label ?(is_enabled = true) ~on_click label =
 ;;
 
 let text_field
-  ?placeholder
-  ?(style = Rounded_border)
-  ?(axis = Horizontal)
-  ?(is_secure = false)
-  ?on_submit
-  ~text
-  ~on_change
-  ()
+      ?placeholder
+      ?(style = Rounded_border)
+      ?(axis = Horizontal)
+      ?(is_secure = false)
+      ?on_submit
+      ~text
+      ~on_change
+      ()
   =
   Text_field_node { text; placeholder; style; axis; is_secure; on_change; on_submit }
 ;;
@@ -993,22 +999,14 @@ let divider () = Divider_node
 let form children = Form_node children
 let scroll_view child = Scroll_view_node child
 
-let list
-  ?on_refresh
-  ?on_delete
-  ?on_move
-  ?(edit_mode = false)
-  rows
-  ~key
-  ~row
-  =
+let list ?on_refresh ?on_delete ?on_move ?(edit_mode = false) rows ~key ~row =
   let seen = String.Hash_set.create () in
   let rows =
     List.map rows ~f:(fun value ->
-       let key = key value in
-       if Hash_set.mem seen key then failwithf "duplicate Apple list key: %s" key ();
-       Hash_set.add seen key;
-       { key; node = row value })
+      let key = key value in
+      if Hash_set.mem seen key then failwithf "duplicate Apple list key: %s" key ();
+      Hash_set.add seen key;
+      { key; node = row value })
   in
   List_node { rows; on_refresh; on_delete; on_move; edit_mode }
 ;;
@@ -1017,10 +1015,10 @@ let movable_rows ?on_move ?(edit_mode = false) rows ~key ~row =
   let seen = String.Hash_set.create () in
   let rows =
     List.map rows ~f:(fun value ->
-       let key = key value in
-       if Hash_set.mem seen key then failwithf "duplicate Apple movable row key: %s" key ();
-       Hash_set.add seen key;
-       { key; node = row value })
+      let key = key value in
+      if Hash_set.mem seen key then failwithf "duplicate Apple movable row key: %s" key ();
+      Hash_set.add seen key;
+      { key; node = row value })
   in
   Movable_rows_node { rows; on_move; edit_mode }
 ;;
@@ -1033,11 +1031,18 @@ let section_key = function
 ;;
 
 let picker_option ~id ~title = { id; title }
+
 let row_action ?system_image ?(style = Default) title ~on_click : row_action =
   { title; system_image; style; on_click }
 ;;
 
-let picker ?(style = (Menu : picker_style)) ~title ~selected ~on_select (options : picker_option list) =
+let picker
+      ?(style = (Menu : picker_style))
+      ~title
+      ~selected
+      ~on_select
+      (options : picker_option list)
+  =
   let seen = String.Hash_set.create () in
   List.iter options ~f:(fun option ->
     if Hash_set.mem seen option.id
@@ -1063,13 +1068,13 @@ let color_picker ~title ~selected ~on_select =
 ;;
 
 let menu_action
-  ~id
-  ~title
-  ?system_image
-  ?(style = Default)
-  ?(is_enabled = true)
-  ~on_click
-  ()
+      ~id
+      ~title
+      ?system_image
+      ?(style = Default)
+      ?(is_enabled = true)
+      ~on_click
+      ()
   =
   { id; title; system_image; style; is_enabled; on_click }
 ;;
@@ -1130,19 +1135,19 @@ let tab_view ~selected ~on_select (tabs : tab list) =
 ;;
 
 let sidebar_split
-  ?title
-  ?(compact_top_bar_visible = true)
-  ?(header_action : sidebar_action option)
-  ?(actions = ([] : sidebar_action list))
-  ?history_title
-  ?(history_actions = ([] : sidebar_action list))
-  ?bottom_search_placeholder
-  ?(bottom_search_text = "")
-  ?bottom_search_on_change
-  ?(bottom_action : sidebar_action option)
-  ~selected
-  ~on_select
-  (tabs : tab list)
+      ?title
+      ?(compact_top_bar_visible = true)
+      ?(header_action : sidebar_action option)
+      ?(actions = ([] : sidebar_action list))
+      ?history_title
+      ?(history_actions = ([] : sidebar_action list))
+      ?bottom_search_placeholder
+      ?(bottom_search_text = "")
+      ?bottom_search_on_change
+      ?(bottom_action : sidebar_action option)
+      ~selected
+      ~on_select
+      (tabs : tab list)
   =
   let seen = String.Hash_set.create () in
   List.iter tabs ~f:(fun tab ->
@@ -1151,22 +1156,25 @@ let sidebar_split
     Hash_set.add seen tab.id);
   let seen_actions = String.Hash_set.create () in
   List.iter
-    (Option.to_list header_action @ actions @ history_actions @ Option.to_list bottom_action)
+    (Option.to_list header_action
+     @ actions
+     @ history_actions
+     @ Option.to_list bottom_action)
     ~f:(fun action ->
-    if Hash_set.mem seen_actions action.id
-    then failwithf "duplicate Apple sidebar action id: %s" action.id ();
-    Hash_set.add seen_actions action.id);
+      if Hash_set.mem seen_actions action.id
+      then failwithf "duplicate Apple sidebar action id: %s" action.id ();
+      Hash_set.add seen_actions action.id);
   Sidebar_split_node
     { title
     ; compact_top_bar_visible
     ; selected
     ; on_select
-     ; tabs
-     ; header_action
-     ; actions
-     ; history_title
-     ; history_actions
-     ; bottom_search_placeholder
+    ; tabs
+    ; header_action
+    ; actions
+    ; history_title
+    ; history_actions
+    ; bottom_search_placeholder
     ; bottom_search_text
     ; bottom_search_on_change
     ; bottom_action
@@ -1174,7 +1182,8 @@ let sidebar_split
 ;;
 
 let image ?color name =
-  Image_node { name; source = System_image; color; max_height = None; corner_radius = None }
+  Image_node
+    { name; source = System_image; color; max_height = None; corner_radius = None }
 ;;
 
 let image_file ?max_height ?corner_radius path =
@@ -1207,8 +1216,7 @@ let unescape_payload_field value =
   let rec loop index =
     if index >= String.length value
     then Buffer.contents buffer
-    else if Char.equal value.[index] '%'
-            && index + 2 < String.length value
+    else if Char.equal value.[index] '%' && index + 2 < String.length value
     then (
       match hex_value value.[index + 1], hex_value value.[index + 2] with
       | Some high, Some low ->
@@ -1253,15 +1261,21 @@ let image_payload_of_event_text text =
     let value key = Map.find values key in
     let int_value key = Option.bind (value key) ~f:Int.of_string_opt in
     (match
-       value "id"
+       ( value "id"
        , value "local_path"
        , value "mime_type"
        , int_value "byte_size"
        , value "sha256"
        , int_value "width"
-       , int_value "height"
+       , int_value "height" )
      with
-     | Some id, Some local_path, Some mime_type, Some byte_size, Some sha256, Some width, Some height ->
+     | ( Some id
+       , Some local_path
+       , Some mime_type
+       , Some byte_size
+       , Some sha256
+       , Some width
+       , Some height ) ->
        Some
          { id
          ; local_path
@@ -1270,23 +1284,31 @@ let image_payload_of_event_text text =
          ; sha256
          ; width
          ; height
-         ; recognized_text = Option.map (value "recognized_text") ~f:unescape_payload_field
+         ; recognized_text =
+             Option.map (value "recognized_text") ~f:unescape_payload_field
          }
      | _ -> None)
   | _ -> None
 ;;
 
 let photo_picker
-  ?(is_enabled = true)
-  ?system_image
-  ?(is_title_visible = true)
-  ~title
-  ?selected
-  ~on_select
-  ()
+      ?(is_enabled = true)
+      ?system_image
+      ?(is_title_visible = true)
+      ~title
+      ?selected
+      ~on_select
+      ()
   =
   Photo_picker_node
-    { title; system_image; is_title_visible; is_enabled; wants_payload = false; selected; on_select }
+    { title
+    ; system_image
+    ; is_title_visible
+    ; is_enabled
+    ; wants_payload = false
+    ; selected
+    ; on_select
+    }
 ;;
 
 let legacy_image_payload image_id =
@@ -1302,13 +1324,13 @@ let legacy_image_payload image_id =
 ;;
 
 let photo_picker_payload
-  ?(is_enabled = true)
-  ?system_image
-  ?(is_title_visible = true)
-  ~title
-  ?selected
-  ~on_select
-  ()
+      ?(is_enabled = true)
+      ?system_image
+      ?(is_title_visible = true)
+      ~title
+      ?selected
+      ~on_select
+      ()
   =
   Photo_picker_node
     { title
@@ -1320,7 +1342,8 @@ let photo_picker_payload
     ; on_select =
         (fun text ->
           let payload =
-            image_payload_of_event_text text |> Option.value ~default:(legacy_image_payload text)
+            image_payload_of_event_text text
+            |> Option.value ~default:(legacy_image_payload text)
           in
           on_select payload)
     }
@@ -1350,7 +1373,8 @@ let camera_capture_payload ~title ?captured ~on_capture () =
     ; on_capture =
         (fun text ->
           let payload =
-            image_payload_of_event_text text |> Option.value ~default:(legacy_image_payload text)
+            image_payload_of_event_text text
+            |> Option.value ~default:(legacy_image_payload text)
           in
           on_capture payload)
     }
@@ -1358,15 +1382,17 @@ let camera_capture_payload ~title ?captured ~on_capture () =
 
 let list_row row = List_row_node row
 let custom_view ?key ~kind () = Custom_view_node { key; kind }
-
 let default_insets = { top = 8.; leading = 8.; bottom = 8.; trailing = 8. }
 let padding ?(insets = default_insets) node = Modified_node (Padding insets, node)
+
 let regular_material_panel ?(corner_radius = 8.) node =
   Modified_node (Regular_material_panel { corner_radius }, node)
 ;;
+
 let secondary_fill_panel ?(corner_radius = 8.) ?(opacity = 0.12) node =
   Modified_node (Secondary_fill_panel { corner_radius; opacity }, node)
 ;;
+
 let liquid_glass_panel
       ?(corner_radius = 8.)
       ?(is_transparent = false)
@@ -1377,31 +1403,44 @@ let liquid_glass_panel
   Modified_node
     (Liquid_glass_panel { corner_radius; is_transparent; tint_color; tint_opacity }, node)
 ;;
+
 let context_menu actions node = Modified_node (Context_menu actions, node)
-;;
 let frame ?width ?height node = Modified_node (Frame { width; height }, node)
 let navigation_title title node = Modified_node (Navigation_title title, node)
+
 let searchable ?prompt ~text ~on_change node =
   Modified_node (Searchable { text; prompt; on_change }, node)
 ;;
+
 let toolbar_item
-  ?system_image
-  ?(is_title_visible = true)
-  ?(is_enabled = true)
-  ?(menu_actions = [])
-  ?share_url
-  ~id
-  ~title
-  ~on_click
-  ()
+      ?system_image
+      ?(is_title_visible = true)
+      ?(is_enabled = true)
+      ?(menu_actions = [])
+      ?share_url
+      ~id
+      ~title
+      ~on_click
+      ()
   : toolbar_item
   =
-  { id; title; system_image; is_title_visible; is_enabled; on_click; share_url; menu_actions }
+  { id
+  ; title
+  ; system_image
+  ; is_title_visible
+  ; is_enabled
+  ; on_click
+  ; share_url
+  ; menu_actions
+  }
 ;;
+
 let toolbar items node = Modified_node (Toolbar items, node)
 let tap_action ~on_click node = Modified_node (Tap_action { on_click }, node)
+let on_appear ~on_appear node = Modified_node (On_appear { on_appear }, node)
 let keyboard_dismiss_controls node = Modified_node (Keyboard_dismiss_controls, node)
 let scroll_dismisses_keyboard node = Modified_node (Scroll_dismisses_keyboard, node)
+
 let safe_area_inset_bottom content node =
   Modified_node (Safe_area_inset_bottom { content }, node)
 ;;
@@ -1411,16 +1450,16 @@ let alert_action ?(role = Alert_default) ?(is_enabled = true) ~id ~title ~on_cli
 ;;
 
 let alert
-  ~is_presented
-  ~title
-  ?message
-  ?text
-  ?placeholder
-  ?on_text_change
-  ?(actions = [])
-  ?on_dismiss
-  ()
-  node
+      ~is_presented
+      ~title
+      ?message
+      ?text
+      ?placeholder
+      ?on_text_change
+      ?(actions = [])
+      ?on_dismiss
+      ()
+      node
   =
   Modified_node
     ( Alert
@@ -1449,7 +1488,16 @@ let sidebar_action
       ()
   : sidebar_action
   =
-  { id; title; subtitle; system_image; avatar_image; avatar_initial; chrome; on_click; menu_actions }
+  { id
+  ; title
+  ; subtitle
+  ; system_image
+  ; avatar_image
+  ; avatar_initial
+  ; chrome
+  ; on_click
+  ; menu_actions
+  }
 ;;
 
 let sheet ~is_presented ~content ?(detents = []) ?on_dismiss node =
@@ -1460,18 +1508,9 @@ let popover ~is_presented ~content ?on_dismiss node =
   Modified_node (Popover { is_presented; content; on_dismiss }, node)
 ;;
 
-let confirmation_dialog
-  ~is_presented
-  ~title
-  ?message
-  ?(actions = [])
-  ?on_dismiss
-  ()
-  node
-  =
+let confirmation_dialog ~is_presented ~title ?message ?(actions = []) ?on_dismiss () node =
   Modified_node
-    ( Confirmation_dialog { is_presented; title; message; actions; on_dismiss }
-    , node )
+    (Confirmation_dialog { is_presented; title; message; actions; on_dismiss }, node)
 ;;
 
 let rec unwrap_modifiers node =
@@ -1537,7 +1576,13 @@ module Renderer = struct
     val set_text : view -> string -> unit
     val set_system_image : view -> string option -> unit
     val set_image_color : view -> text_color option -> unit
-    val set_image_style : view -> max_height:float option -> corner_radius:float option -> unit
+
+    val set_image_style
+      :  view
+      -> max_height:float option
+      -> corner_radius:float option
+      -> unit
+
     val set_button_subtitle : view -> string option -> unit
     val set_button_style : view -> button_style -> unit
     val set_title_visible : view -> bool -> unit
@@ -1549,7 +1594,8 @@ module Renderer = struct
     val set_toggle : view -> is_on:bool -> on_change:(bool -> unit) -> unit
     val set_progress : view -> value:float -> unit
     val set_spacing : view -> float option -> unit
-    val set_children : view -> keyed:(string option) list -> view list -> unit
+    val set_children : view -> keyed:string option list -> view list -> unit
+
     val set_list_behavior
       :  view
       -> on_refresh:(unit -> unit) option
@@ -1557,12 +1603,14 @@ module Renderer = struct
       -> on_move:(from_index:int -> to_index:int -> unit) option
       -> edit_mode:bool
       -> unit
+
     val set_tabs
       :  view
       -> selected:string
       -> on_select:(string -> unit) option
       -> rendered_tab list
       -> unit
+
     val set_sidebar_shell
       :  view
       -> title:string option
@@ -1576,6 +1624,7 @@ module Renderer = struct
       -> bottom_search_on_change:(string -> unit) option
       -> bottom_action:rendered_sidebar_action option
       -> unit
+
     val set_list_row
       :  view
       -> title:string
@@ -1590,6 +1639,7 @@ module Renderer = struct
       -> swipe_actions:rendered_row_action list
       -> menu_actions:rendered_row_action list
       -> unit
+
     val refresh_list_row_callbacks
       :  view
       -> on_click:(unit -> unit) option
@@ -1597,13 +1647,16 @@ module Renderer = struct
       -> swipe_actions:rendered_row_action list
       -> menu_actions:rendered_row_action list
       -> unit
+
     val set_navigation_link_callbacks
       :  view
       -> on_activate:(unit -> unit) option
       -> on_deactivate:(unit -> unit) option
       -> unit
+
     val set_navigation_link_value : view -> string option -> unit
     val set_section : view -> title:string option -> unit
+
     val set_picker
       :  view
       -> title:string
@@ -1612,6 +1665,7 @@ module Renderer = struct
       -> on_select:(string -> unit) option
       -> rendered_picker_option list
       -> unit
+
     val set_slider
       :  view
       -> title:string
@@ -1620,6 +1674,7 @@ module Renderer = struct
       -> max:float
       -> on_change:(float -> unit) option
       -> unit
+
     val set_stepper
       :  view
       -> title:string
@@ -1629,18 +1684,21 @@ module Renderer = struct
       -> step:int
       -> on_change:(int -> unit) option
       -> unit
+
     val set_date_picker
       :  view
       -> title:string
       -> selected:string
       -> on_select:(string -> unit) option
       -> unit
+
     val set_color_picker
       :  view
       -> title:string
       -> selected:string
       -> on_select:(string -> unit) option
       -> unit
+
     val set_menu
       :  view
       -> title:string
@@ -1648,30 +1706,36 @@ module Renderer = struct
       -> actions:menu_action list
       -> schedule_event:(unit Action.t -> unit)
       -> unit
+
     val set_disclosure_group
       :  view
       -> title:string
       -> is_expanded:bool
       -> on_change:(bool -> unit) option
       -> unit
+
     val set_navigation_path_stack
       :  view
       -> path:string list
       -> on_path_change:(string list -> unit) option
       -> destinations:string list
       -> unit
+
     val set_file_exporter : view -> file_export -> unit
     val set_share_link : view -> share_link -> unit
+
     val set_file_importer
       :  view
       -> allowed_content_types:string list
       -> on_select:(string -> unit) option
       -> unit
+
     val set_image_payload_mode : view -> bool -> unit
     val set_image_source : view -> image_source -> unit
     val set_on_click : view -> (unit -> unit) option -> unit
     val set_on_change : view -> (string -> unit) option -> unit
     val set_enabled : view -> bool -> unit
+
     val set_modifiers
       :  view
       -> schedule_event:(unit Action.t -> unit)
@@ -1724,7 +1788,11 @@ module Renderer = struct
         opt (Option.map width ~f:float) ^ "x" ^ opt (Option.map height ~f:float)
       in
       let text_attrs { style; weight; color } =
-        string_of_int (Obj.magic style) ^ ":" ^ string_of_int (Obj.magic weight) ^ ":" ^ string_of_int (Obj.magic color)
+        string_of_int (Obj.magic style)
+        ^ ":"
+        ^ string_of_int (Obj.magic weight)
+        ^ ":"
+        ^ string_of_int (Obj.magic color)
       in
       let role = function
         | None -> "_"
@@ -1742,18 +1810,37 @@ module Renderer = struct
         ^ opt action.share_url
       in
       let menu_action_signature (action : menu_action) =
-        action.id ^ ":" ^ action.title ^ ":" ^ opt action.system_image ^ ":" ^ bool action.is_enabled
+        action.id
+        ^ ":"
+        ^ action.title
+        ^ ":"
+        ^ opt action.system_image
+        ^ ":"
+        ^ bool action.is_enabled
       in
       let row_action_signature (action : row_action) =
-        action.title ^ ":" ^ opt action.system_image ^ ":" ^ string_of_int (Obj.magic action.style)
+        action.title
+        ^ ":"
+        ^ opt action.system_image
+        ^ ":"
+        ^ string_of_int (Obj.magic action.style)
       in
       let modifier = function
         | Padding insets ->
-          "padding:" ^ float insets.top ^ ":" ^ float insets.leading ^ ":" ^ float insets.bottom ^ ":" ^ float insets.trailing
-        | Regular_material_panel { corner_radius } -> "regular-material-panel:" ^ float corner_radius
+          "padding:"
+          ^ float insets.top
+          ^ ":"
+          ^ float insets.leading
+          ^ ":"
+          ^ float insets.bottom
+          ^ ":"
+          ^ float insets.trailing
+        | Regular_material_panel { corner_radius } ->
+          "regular-material-panel:" ^ float corner_radius
         | Secondary_fill_panel { corner_radius; opacity } ->
           "secondary-fill-panel:" ^ float corner_radius ^ ":" ^ float opacity
-        | Liquid_glass_panel { corner_radius; is_transparent; tint_color; tint_opacity } ->
+        | Liquid_glass_panel { corner_radius; is_transparent; tint_color; tint_opacity }
+          ->
           "liquid-glass-panel:"
           ^ float corner_radius
           ^ ":"
@@ -1770,23 +1857,68 @@ module Renderer = struct
           "searchable:" ^ text ^ ":" ^ opt prompt
         | Toolbar items -> "toolbar:" ^ list (List.map items ~f:toolbar_item_signature)
         | Tap_action _ -> "tap-action"
+        | On_appear _ -> "on-appear"
         | Keyboard_dismiss_controls -> "keyboard-dismiss-controls"
         | Scroll_dismisses_keyboard -> "scroll-dismisses-keyboard"
-        | Safe_area_inset_bottom { content } -> "safe-area-inset-bottom:" ^ fingerprint content
+        | Safe_area_inset_bottom { content } ->
+          "safe-area-inset-bottom:" ^ fingerprint content
         | Sheet { is_presented; content; detents; on_dismiss = _ } ->
-          "sheet:" ^ bool is_presented ^ ":" ^ fingerprint content ^ ":" ^ int (List.length detents)
+          "sheet:"
+          ^ bool is_presented
+          ^ ":"
+          ^ fingerprint content
+          ^ ":"
+          ^ int (List.length detents)
         | Popover { is_presented; content; on_dismiss = _ } ->
           "popover:" ^ bool is_presented ^ ":" ^ fingerprint content
         | Confirmation_dialog { is_presented; title; message; actions; on_dismiss = _ } ->
-          "confirmation-dialog:" ^ bool is_presented ^ ":" ^ title ^ ":" ^ opt message ^ ":" ^ list (List.map actions ~f:(fun action -> action.id ^ ":" ^ action.title ^ ":" ^ bool action.is_enabled))
-        | Alert { is_presented; title; message; text; placeholder; actions; on_text_change = _; on_dismiss = _ } ->
-          "alert:" ^ bool is_presented ^ ":" ^ title ^ ":" ^ opt message ^ ":" ^ opt text ^ ":" ^ opt placeholder ^ ":" ^ list (List.map actions ~f:(fun action -> action.id ^ ":" ^ action.title ^ ":" ^ bool action.is_enabled))
+          "confirmation-dialog:"
+          ^ bool is_presented
+          ^ ":"
+          ^ title
+          ^ ":"
+          ^ opt message
+          ^ ":"
+          ^ list
+              (List.map actions ~f:(fun action ->
+                 action.id ^ ":" ^ action.title ^ ":" ^ bool action.is_enabled))
+        | Alert
+            { is_presented
+            ; title
+            ; message
+            ; text
+            ; placeholder
+            ; actions
+            ; on_text_change = _
+            ; on_dismiss = _
+            } ->
+          "alert:"
+          ^ bool is_presented
+          ^ ":"
+          ^ title
+          ^ ":"
+          ^ opt message
+          ^ ":"
+          ^ opt text
+          ^ ":"
+          ^ opt placeholder
+          ^ ":"
+          ^ list
+              (List.map actions ~f:(fun action ->
+                 action.id ^ ":" ^ action.title ^ ":" ^ bool action.is_enabled))
       in
       let shape =
         match node with
         | Text { text; attributes } -> "text:" ^ text ^ ":" ^ text_attrs attributes
         | Button_node
-            { title; system_image; subtitle; style; is_title_visible; is_enabled; on_click = _ } ->
+            { title
+            ; system_image
+            ; subtitle
+            ; style
+            ; is_title_visible
+            ; is_enabled
+            ; on_click = _
+            } ->
           "button:"
           ^ title
           ^ ":"
@@ -1801,7 +1933,8 @@ module Renderer = struct
           ^ bool is_enabled
         | Button_label_node { label; is_enabled; on_click = _ } ->
           "button-label:" ^ bool is_enabled ^ ":" ^ fingerprint label
-        | Text_field_node { text; placeholder; style; axis; is_secure; on_change = _; on_submit = _ } ->
+        | Text_field_node
+            { text; placeholder; style; axis; is_secure; on_change = _; on_submit = _ } ->
           "text-field:"
           ^ text
           ^ ":"
@@ -1812,23 +1945,51 @@ module Renderer = struct
           ^ axis_name axis
           ^ ":"
           ^ bool is_secure
-        | Toggle_node { title; is_on; on_change = _ } -> "toggle:" ^ title ^ ":" ^ bool is_on
-        | Text_editor_node { text; placeholder; on_change = _ } -> "text-editor:" ^ text ^ ":" ^ opt placeholder
+        | Toggle_node { title; is_on; on_change = _ } ->
+          "toggle:" ^ title ^ ":" ^ bool is_on
+        | Text_editor_node { text; placeholder; on_change = _ } ->
+          "text-editor:" ^ text ^ ":" ^ opt placeholder
         | Progress_view_node { value } -> "progress-view:" ^ float value
         | Stack_node { axis; spacing; children } ->
-          "stack:" ^ string_of_int (Obj.magic axis) ^ ":" ^ opt (Option.map spacing ~f:float) ^ ":" ^ list (List.map children ~f:fingerprint)
+          "stack:"
+          ^ string_of_int (Obj.magic axis)
+          ^ ":"
+          ^ opt (Option.map spacing ~f:float)
+          ^ ":"
+          ^ list (List.map children ~f:fingerprint)
         | Z_stack_node children -> "zstack:" ^ list (List.map children ~f:fingerprint)
         | Spacer_node -> "spacer"
         | Divider_node -> "divider"
         | Form_node children -> "form:" ^ list (List.map children ~f:fingerprint)
         | Scroll_view_node child -> "scroll-view:" ^ fingerprint child
         | List_node { rows; on_refresh; on_delete; on_move; edit_mode } ->
-          "list:" ^ list (List.map rows ~f:(fun row -> row.key ^ ":" ^ fingerprint row.node)) ^ ":" ^ bool (Option.is_some on_refresh) ^ ":" ^ bool (Option.is_some on_delete) ^ ":" ^ bool (Option.is_some on_move) ^ ":" ^ bool edit_mode
+          "list:"
+          ^ list (List.map rows ~f:(fun row -> row.key ^ ":" ^ fingerprint row.node))
+          ^ ":"
+          ^ bool (Option.is_some on_refresh)
+          ^ ":"
+          ^ bool (Option.is_some on_delete)
+          ^ ":"
+          ^ bool (Option.is_some on_move)
+          ^ ":"
+          ^ bool edit_mode
         | Movable_rows_node { rows; on_move; edit_mode } ->
-          "movable-rows:" ^ list (List.map rows ~f:(fun row -> row.key ^ ":" ^ fingerprint row.node)) ^ ":" ^ bool (Option.is_some on_move) ^ ":" ^ bool edit_mode
-        | Navigation_stack_node children -> "navigation-stack:" ^ list (List.map children ~f:fingerprint)
+          "movable-rows:"
+          ^ list (List.map rows ~f:(fun row -> row.key ^ ":" ^ fingerprint row.node))
+          ^ ":"
+          ^ bool (Option.is_some on_move)
+          ^ ":"
+          ^ bool edit_mode
+        | Navigation_stack_node children ->
+          "navigation-stack:" ^ list (List.map children ~f:fingerprint)
         | Navigation_path_stack_node { path; root; destinations; on_path_change = _ } ->
-          "navigation-path-stack:" ^ list path ^ ":" ^ fingerprint root ^ ":" ^ list (List.map destinations ~f:(fun row -> row.key ^ ":" ^ fingerprint row.node))
+          "navigation-path-stack:"
+          ^ list path
+          ^ ":"
+          ^ fingerprint root
+          ^ ":"
+          ^ list
+              (List.map destinations ~f:(fun row -> row.key ^ ":" ^ fingerprint row.node))
         | Navigation_link_node
             { label; destination; value; on_activate = _; on_deactivate = _ } ->
           let destination_signature =
@@ -1843,15 +2004,51 @@ module Renderer = struct
           ^ ":"
           ^ destination_signature
         | Navigation_split_node { sidebar; content; detail } ->
-          "navigation-split:" ^ fingerprint sidebar ^ ":" ^ fingerprint content ^ ":" ^ fingerprint detail
+          "navigation-split:"
+          ^ fingerprint sidebar
+          ^ ":"
+          ^ fingerprint content
+          ^ ":"
+          ^ fingerprint detail
         | Adaptive_layout_node { compact; regular } ->
           "adaptive-layout:" ^ fingerprint compact ^ ":" ^ fingerprint regular
         | List_row_node row ->
-          "list-row:" ^ row.title ^ ":" ^ opt row.subtitle ^ ":" ^ opt row.trailing_text ^ ":" ^ opt row.leading_system_image ^ ":" ^ bool row.title_strikethrough ^ ":" ^ list (List.map row.swipe_actions ~f:row_action_signature) ^ ":" ^ list (List.map row.menu_actions ~f:row_action_signature)
+          "list-row:"
+          ^ row.title
+          ^ ":"
+          ^ opt row.subtitle
+          ^ ":"
+          ^ opt row.trailing_text
+          ^ ":"
+          ^ opt row.leading_system_image
+          ^ ":"
+          ^ bool row.title_strikethrough
+          ^ ":"
+          ^ list (List.map row.swipe_actions ~f:row_action_signature)
+          ^ ":"
+          ^ list (List.map row.menu_actions ~f:row_action_signature)
         | Section_node { key; title; children } ->
-          "section:" ^ key ^ ":" ^ opt title ^ ":" ^ list (List.map children ~f:fingerprint)
+          "section:"
+          ^ key
+          ^ ":"
+          ^ opt title
+          ^ ":"
+          ^ list (List.map children ~f:fingerprint)
         | Tab_view_node { selected; tabs; on_select = _ } ->
-          "tabs:" ^ selected ^ ":" ^ list (List.map tabs ~f:(fun tab -> tab.id ^ ":" ^ tab.title ^ ":" ^ opt tab.system_image ^ ":" ^ role tab.role ^ ":" ^ fingerprint tab.content))
+          "tabs:"
+          ^ selected
+          ^ ":"
+          ^ list
+              (List.map tabs ~f:(fun tab ->
+                 tab.id
+                 ^ ":"
+                 ^ tab.title
+                 ^ ":"
+                 ^ opt tab.system_image
+                 ^ ":"
+                 ^ role tab.role
+                 ^ ":"
+                 ^ fingerprint tab.content))
         | Sidebar_split_node
             { title
             ; compact_top_bar_visible
@@ -1922,18 +2119,68 @@ module Renderer = struct
         | Slider_node { title; value; min; max; on_change = _ } ->
           "slider:" ^ title ^ ":" ^ float value ^ ":" ^ float min ^ ":" ^ float max
         | Stepper_node { title; value; min; max; step; on_change = _ } ->
-          "stepper:" ^ title ^ ":" ^ int value ^ ":" ^ int min ^ ":" ^ int max ^ ":" ^ int step
-        | Date_picker_node { title; selected; on_select = _ } -> "date-picker:" ^ title ^ ":" ^ selected
-        | Color_picker_node { title; selected; on_select = _ } -> "color-picker:" ^ title ^ ":" ^ selected
+          "stepper:"
+          ^ title
+          ^ ":"
+          ^ int value
+          ^ ":"
+          ^ int min
+          ^ ":"
+          ^ int max
+          ^ ":"
+          ^ int step
+        | Date_picker_node { title; selected; on_select = _ } ->
+          "date-picker:" ^ title ^ ":" ^ selected
+        | Color_picker_node { title; selected; on_select = _ } ->
+          "color-picker:" ^ title ^ ":" ^ selected
         | Menu_node { title; system_image; actions } ->
-          "menu:" ^ title ^ ":" ^ opt system_image ^ ":" ^ list (List.map actions ~f:menu_action_signature)
+          "menu:"
+          ^ title
+          ^ ":"
+          ^ opt system_image
+          ^ ":"
+          ^ list (List.map actions ~f:menu_action_signature)
         | Disclosure_group_node { title; is_expanded; children; on_change = _ } ->
-          "disclosure-group:" ^ title ^ ":" ^ bool is_expanded ^ ":" ^ list (List.map children ~f:fingerprint)
-        | Photo_picker_node { title; system_image; is_title_visible; is_enabled; wants_payload; selected; on_select = _ } ->
-          "photo-picker:" ^ title ^ ":" ^ opt system_image ^ ":" ^ bool is_title_visible ^ ":" ^ bool is_enabled ^ ":" ^ bool wants_payload ^ ":" ^ opt selected
-        | Share_link_node { title; url; is_enabled } -> "share-link:" ^ title ^ ":" ^ url ^ ":" ^ bool is_enabled
+          "disclosure-group:"
+          ^ title
+          ^ ":"
+          ^ bool is_expanded
+          ^ ":"
+          ^ list (List.map children ~f:fingerprint)
+        | Photo_picker_node
+            { title
+            ; system_image
+            ; is_title_visible
+            ; is_enabled
+            ; wants_payload
+            ; selected
+            ; on_select = _
+            } ->
+          "photo-picker:"
+          ^ title
+          ^ ":"
+          ^ opt system_image
+          ^ ":"
+          ^ bool is_title_visible
+          ^ ":"
+          ^ bool is_enabled
+          ^ ":"
+          ^ bool wants_payload
+          ^ ":"
+          ^ opt selected
+        | Share_link_node { title; url; is_enabled } ->
+          "share-link:" ^ title ^ ":" ^ url ^ ":" ^ bool is_enabled
         | File_exporter_node { title; is_enabled; export } ->
-          "file-exporter:" ^ title ^ ":" ^ bool is_enabled ^ ":" ^ export.filename ^ ":" ^ export.content_type ^ ":" ^ export.content
+          "file-exporter:"
+          ^ title
+          ^ ":"
+          ^ bool is_enabled
+          ^ ":"
+          ^ export.filename
+          ^ ":"
+          ^ export.content_type
+          ^ ":"
+          ^ export.content
         | File_importer_node { title; allowed_content_types; on_select = _ } ->
           "file-importer:" ^ title ^ ":" ^ list allowed_content_types
         | Camera_capture_node { title; wants_payload; captured; on_capture = _ } ->
@@ -2024,7 +2271,14 @@ module Renderer = struct
          Backend.set_enabled t.view true;
          replace_children []
        | Button_node
-           { title; system_image; subtitle; style; is_title_visible; is_enabled; on_click } ->
+           { title
+           ; system_image
+           ; subtitle
+           ; style
+           ; is_title_visible
+           ; is_enabled
+           ; on_click
+           } ->
          Backend.set_text t.view title;
          Backend.set_system_image t.view system_image;
          Backend.set_button_subtitle t.view subtitle;
@@ -2048,7 +2302,8 @@ module Renderer = struct
            (if is_enabled then Some (fun () -> t.schedule_event on_click) else None);
          Backend.set_on_change t.view None;
          reconcile_positional t [ label ]
-       | Text_field_node { text; placeholder; style; axis; is_secure; on_change; on_submit } ->
+       | Text_field_node
+           { text; placeholder; style; axis; is_secure; on_change; on_submit } ->
          Backend.set_text t.view text;
          Backend.set_placeholder t.view placeholder;
          Backend.set_text_field_style t.view style;
@@ -2112,14 +2367,15 @@ module Renderer = struct
          Backend.set_on_change t.view None;
          Backend.set_list_behavior
            t.view
-           ~on_refresh:(Option.map on_refresh ~f:(fun action -> fun () -> t.schedule_event action))
+           ~on_refresh:
+             (Option.map on_refresh ~f:(fun action -> fun () -> t.schedule_event action))
            ~on_delete:
              (Option.map on_delete ~f:(fun on_delete ->
                 fun index -> t.schedule_event (on_delete index)))
            ~on_move:
              (Option.map on_move ~f:(fun on_move ->
                 fun ~from_index ~to_index ->
-                  t.schedule_event (on_move ~from_index ~to_index)))
+                t.schedule_event (on_move ~from_index ~to_index)))
            ~edit_mode;
          reconcile_keyed t rows
        | Movable_rows_node { rows; on_move; edit_mode } ->
@@ -2132,7 +2388,7 @@ module Renderer = struct
            ~on_move:
              (Option.map on_move ~f:(fun on_move ->
                 fun ~from_index ~to_index ->
-                  t.schedule_event (on_move ~from_index ~to_index)))
+                t.schedule_event (on_move ~from_index ~to_index)))
            ~edit_mode;
          reconcile_keyed t rows
        | Navigation_stack_node children ->
@@ -2145,8 +2401,7 @@ module Renderer = struct
          Backend.set_navigation_path_stack
            t.view
            ~path
-           ~on_path_change:
-             (Some (fun path -> t.schedule_event (on_path_change path)))
+           ~on_path_change:(Some (fun path -> t.schedule_event (on_path_change path)))
            ~destinations:(List.map destinations ~f:(fun destination -> destination.key));
          reconcile_keyed t ({ key = "__root__"; node = root } :: destinations)
        | Navigation_link_node { label; destination; value; on_activate; on_deactivate } ->
@@ -2155,9 +2410,11 @@ module Renderer = struct
          Backend.set_navigation_link_value t.view value;
          Backend.set_navigation_link_callbacks
            t.view
-           ~on_activate:(Option.map on_activate ~f:(fun action -> fun () -> t.schedule_event action))
+           ~on_activate:
+             (Option.map on_activate ~f:(fun action -> fun () -> t.schedule_event action))
            ~on_deactivate:
-             (Option.map on_deactivate ~f:(fun action -> fun () -> t.schedule_event action));
+             (Option.map on_deactivate ~f:(fun action ->
+                fun () -> t.schedule_event action));
          reconcile_positional t (label :: Option.to_list destination)
        | Navigation_split_node { sidebar; content; detail } ->
          Backend.set_on_click t.view None;
@@ -2338,7 +2595,12 @@ module Renderer = struct
          Backend.set_on_change t.view None;
          replace_children []
        | Menu_node { title; system_image; actions } ->
-         Backend.set_menu t.view ~title ~system_image ~actions ~schedule_event:t.schedule_event;
+         Backend.set_menu
+           t.view
+           ~title
+           ~system_image
+           ~actions
+           ~schedule_event:t.schedule_event;
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          replace_children []
@@ -2352,7 +2614,14 @@ module Renderer = struct
          Backend.set_on_change t.view None;
          reconcile_positional t children
        | Photo_picker_node
-           { title; system_image; is_title_visible; is_enabled; wants_payload; selected; on_select } ->
+           { title
+           ; system_image
+           ; is_title_visible
+           ; is_enabled
+           ; wants_payload
+           ; selected
+           ; on_select
+           } ->
          Backend.set_text t.view title;
          Backend.set_system_image t.view system_image;
          Backend.set_title_visible t.view is_title_visible;
@@ -2402,17 +2671,14 @@ module Renderer = struct
          Backend.set_on_change t.view None;
          replace_children []
        | Modified_node _ -> assert false);
-      Backend.set_modifiers
-        t.view
-        ~schedule_event:t.schedule_event
-        rendered_modifiers
+      Backend.set_modifiers t.view ~schedule_event:t.schedule_event rendered_modifiers
 
     and rendered_list_row_callbacks
-      t
-      ~on_click
-      ~(leading_button : row_leading_button option)
-      ~(swipe_actions : row_action list)
-      ~(menu_actions : row_action list)
+          t
+          ~on_click
+          ~(leading_button : row_leading_button option)
+          ~(swipe_actions : row_action list)
+          ~(menu_actions : row_action list)
       =
       ( Option.map leading_button ~f:(fun leading_button ->
           { system_image = leading_button.system_image
@@ -2433,8 +2699,7 @@ module Renderer = struct
           ; style = action.style
           ; on_click = (fun () -> t.schedule_event action.on_click)
           })
-      , Option.map on_click ~f:(fun on_click -> fun () -> t.schedule_event on_click)
-      )
+      , Option.map on_click ~f:(fun on_click -> fun () -> t.schedule_event on_click) )
 
     and refresh_callbacks t node =
       match node with
@@ -2503,7 +2768,8 @@ module Renderer = struct
             Rendered_regular_material_panel { corner_radius }
           | Secondary_fill_panel { corner_radius; opacity } ->
             Rendered_secondary_fill_panel { corner_radius; opacity }
-          | Liquid_glass_panel { corner_radius; is_transparent; tint_color; tint_opacity } ->
+          | Liquid_glass_panel { corner_radius; is_transparent; tint_color; tint_opacity }
+            ->
             Rendered_liquid_glass_panel
               { corner_radius; is_transparent; tint_color; tint_opacity }
           | Context_menu actions -> Rendered_context_menu actions
@@ -2513,13 +2779,15 @@ module Renderer = struct
             Rendered_searchable { text; prompt; on_change }
           | Toolbar items -> Rendered_toolbar items
           | Tap_action { on_click } -> Rendered_tap_action { on_click }
+          | On_appear { on_appear } -> Rendered_on_appear { on_appear }
           | Keyboard_dismiss_controls -> Rendered_keyboard_dismiss_controls
           | Scroll_dismisses_keyboard -> Rendered_scroll_dismisses_keyboard
           | Safe_area_inset_bottom { content } ->
             Hash_set.add used index;
             let existing =
               Hashtbl.find old_by_index index
-              |> Option.map ~f:(fun (child : modifier_child) -> ({ key = None; mounted = child.mounted } : child))
+              |> Option.map ~f:(fun (child : modifier_child) ->
+                ({ key = None; mounted = child.mounted } : child))
             in
             let mounted = patch_child ~schedule_event:t.schedule_event existing content in
             next_modifier_children := { index; mounted } :: !next_modifier_children;
@@ -2531,9 +2799,12 @@ module Renderer = struct
                 Hash_set.add used index;
                 let existing =
                   Hashtbl.find old_by_index index
-                  |> Option.map ~f:(fun (child : modifier_child) -> ({ key = None; mounted = child.mounted } : child))
+                  |> Option.map ~f:(fun (child : modifier_child) ->
+                    ({ key = None; mounted = child.mounted } : child))
                 in
-                let mounted = patch_child ~schedule_event:t.schedule_event existing content in
+                let mounted =
+                  patch_child ~schedule_event:t.schedule_event existing content
+                in
                 next_modifier_children := { index; mounted } :: !next_modifier_children;
                 Some mounted.view)
               else None
@@ -2546,9 +2817,12 @@ module Renderer = struct
                 Hash_set.add used index;
                 let existing =
                   Hashtbl.find old_by_index index
-                  |> Option.map ~f:(fun (child : modifier_child) -> ({ key = None; mounted = child.mounted } : child))
+                  |> Option.map ~f:(fun (child : modifier_child) ->
+                    ({ key = None; mounted = child.mounted } : child))
                 in
-                let mounted = patch_child ~schedule_event:t.schedule_event existing content in
+                let mounted =
+                  patch_child ~schedule_event:t.schedule_event existing content
+                in
                 next_modifier_children := { index; mounted } :: !next_modifier_children;
                 Some mounted.view)
               else None
@@ -2588,10 +2862,13 @@ module Renderer = struct
         match old_children, nodes with
         | [], [] -> []
         | old_child :: old_tail, node :: node_tail ->
-          { key = None; mounted = patch_child ~schedule_event:t.schedule_event (Some old_child) node }
+          { key = None
+          ; mounted = patch_child ~schedule_event:t.schedule_event (Some old_child) node
+          }
           :: loop old_tail node_tail
         | [], node :: node_tail ->
-          { key = None; mounted = mount ~schedule_event:t.schedule_event node } :: loop [] node_tail
+          { key = None; mounted = mount ~schedule_event:t.schedule_event node }
+          :: loop [] node_tail
         | old_child :: old_tail, [] ->
           destroy old_child.mounted;
           loop old_tail []
@@ -2626,9 +2903,7 @@ module Renderer = struct
         (List.map children ~f:(fun child -> child.mounted.view))
 
     and reconcile_tabs t ~selected ~on_select tabs =
-      let rows =
-        List.map tabs ~f:(fun tab -> { key = tab.id; node = tab.content })
-      in
+      let rows = List.map tabs ~f:(fun tab -> { key = tab.id; node = tab.content }) in
       let rendered_tabs =
         List.map tabs ~f:(fun tab ->
           { id = tab.id
@@ -2663,7 +2938,6 @@ module App = struct
     ;;
 
     let flush_and_render = Bonsai_native.App_driver.flush_and_render
-
     let view t = Option.map (Bonsai_native.App_driver.rendered t) ~f:R.view
   end
 end
@@ -2676,7 +2950,6 @@ module For_testing = struct
         ; destroyed : int
         ; mutations : int
         }
-
     end
 
     type view =
@@ -2758,6 +3031,7 @@ module For_testing = struct
       ; mutable row_menu_actions : rendered_row_action list
       ; mutable modifiers : view rendered_modifier list
       ; mutable schedule_event : (unit Action.t -> unit) option
+      ; mutable on_appear : (unit -> unit) option
       }
 
     let next_id = ref 0
@@ -2872,6 +3146,7 @@ module For_testing = struct
       ; row_menu_actions = []
       ; modifiers = []
       ; schedule_event = None
+      ; on_appear = None
       }
     ;;
 
@@ -2977,17 +3252,17 @@ module For_testing = struct
     ;;
 
     let set_sidebar_shell
-      view
-      ~title
-      ~compact_top_bar_visible
-      ~header_action
-      ~actions
-      ~history_title
-      ~history_actions
-      ~bottom_search_placeholder
-      ~bottom_search_text
-      ~bottom_search_on_change
-      ~bottom_action
+          view
+          ~title
+          ~compact_top_bar_visible
+          ~header_action
+          ~actions
+          ~history_title
+          ~history_actions
+          ~bottom_search_placeholder
+          ~bottom_search_text
+          ~bottom_search_on_change
+          ~bottom_action
       =
       mutate ();
       view.sidebar_title <- title;
@@ -3003,28 +3278,25 @@ module For_testing = struct
     ;;
 
     let set_list_row
-      view
-      ~title
-      ~subtitle
-      ~trailing_text
-      ~leading_system_image
-      ~preview_image_path
-      ~content_style
-      ~accessory
-      ~title_strikethrough
-      ~(leading_button : rendered_row_leading_button option)
-      ~(swipe_actions : rendered_row_action list)
-      ~(menu_actions : rendered_row_action list)
+          view
+          ~title
+          ~subtitle
+          ~trailing_text
+          ~leading_system_image
+          ~preview_image_path
+          ~content_style
+          ~accessory
+          ~title_strikethrough
+          ~(leading_button : rendered_row_leading_button option)
+          ~(swipe_actions : rendered_row_action list)
+          ~(menu_actions : rendered_row_action list)
       =
       mutate ();
       let leading =
         match leading_button with
         | None -> "leading=none"
         | Some leading ->
-          sprintf
-            "leading=%s:%s"
-            leading.system_image
-            (Bool.to_string leading.selected)
+          sprintf "leading=%s:%s" leading.system_image (Bool.to_string leading.selected)
       in
       let actions =
         swipe_actions
@@ -3054,7 +3326,8 @@ module For_testing = struct
       view.list_row
       <- Some
            (sprintf
-              " title=%s subtitle=%s trailing=%s style=%s accessory=%s strikethrough=%s leading-image=%s preview-image=%s %s actions=[%s] menu=[%s]"
+              " title=%s subtitle=%s trailing=%s style=%s accessory=%s strikethrough=%s \
+               leading-image=%s preview-image=%s %s actions=[%s] menu=[%s]"
               (quoted title)
               (option_text subtitle)
               (option_text trailing_text)
@@ -3069,11 +3342,11 @@ module For_testing = struct
     ;;
 
     let refresh_list_row_callbacks
-      view
-      ~on_click
-      ~leading_button
-      ~swipe_actions
-      ~menu_actions
+          view
+          ~on_click
+          ~leading_button
+          ~swipe_actions
+          ~menu_actions
       =
       view.on_click <- on_click;
       view.on_change <- None;
@@ -3196,17 +3469,21 @@ module For_testing = struct
       view.modifiers <- modifiers;
       view.schedule_event <- Some schedule_event;
       view.context_menu_actions
-      <- (List.find_map modifiers ~f:(function
-            | Rendered_context_menu actions -> Some actions
-            | _ -> None)
-          |> Option.value ~default:[]);
+      <- List.find_map modifiers ~f:(function
+           | Rendered_context_menu actions -> Some actions
+           | _ -> None)
+         |> Option.value ~default:[];
       (match
          List.find_map modifiers ~f:(function
            | Rendered_tap_action { on_click } -> Some on_click
            | _ -> None)
        with
        | None -> ()
-       | Some on_click -> view.on_click <- Some (fun () -> schedule_event on_click))
+       | Some on_click -> view.on_click <- Some (fun () -> schedule_event on_click));
+      view.on_appear
+      <- List.find_map modifiers ~f:(function
+           | Rendered_on_appear { on_appear } -> Some (fun () -> schedule_event on_appear)
+           | _ -> None)
     ;;
 
     let kind_name = function
@@ -3262,6 +3539,7 @@ module For_testing = struct
       | Rendered_searchable _ -> "searchable"
       | Rendered_toolbar _ -> "toolbar"
       | Rendered_tap_action _ -> "tap-action"
+      | Rendered_on_appear _ -> "on-appear"
       | Rendered_keyboard_dismiss_controls -> "keyboard-dismiss-controls"
       | Rendered_scroll_dismisses_keyboard -> "scroll-dismisses-keyboard"
       | Rendered_safe_area_inset_bottom _ -> "safe-area-inset-bottom"
@@ -3292,7 +3570,8 @@ module For_testing = struct
       | Navigation_link, true, [ _; (_, destination) ] -> Some destination
       | Navigation_path_stack, _, _ -> navigation_path_stack_destination view
       | _ ->
-        List.find_map view.children ~f:(fun (_, child) -> active_navigation_destination child)
+        List.find_map view.children ~f:(fun (_, child) ->
+          active_navigation_destination child)
 
     and visible_view view =
       match view.kind with
@@ -3330,8 +3609,7 @@ module For_testing = struct
       in
       let button_subtitle =
         match view.kind, view.button_subtitle with
-        | Button, Some subtitle ->
-          " subtitle=" ^ option_text (Some subtitle)
+        | Button, Some subtitle -> " subtitle=" ^ option_text (Some subtitle)
         | _ -> ""
       in
       let button_style =
@@ -3344,20 +3622,17 @@ module For_testing = struct
       let text_attributes =
         if equal_text_attributes view.text_attributes default_text_attributes
         then ""
-        else (
-          " text_attributes=" ^ text_attributes_name view.text_attributes)
+        else " text_attributes=" ^ text_attributes_name view.text_attributes
       in
       let placeholder =
         match view.kind, view.placeholder with
         | Photo_picker, _ -> ""
         | _, None -> ""
-        | _, Some placeholder ->
-          " placeholder=" ^ quoted placeholder
+        | _, Some placeholder -> " placeholder=" ^ quoted placeholder
       in
       let text_field_style =
         match view.kind with
-        | Text_field ->
-          " style=" ^ text_field_style_name view.text_field_style
+        | Text_field -> " style=" ^ text_field_style_name view.text_field_style
         | _ -> ""
       in
       let text_field_chrome =
@@ -3462,23 +3737,18 @@ module For_testing = struct
       in
       let photo_picker =
         match view.kind with
-        | Photo_picker ->
-          " selected=" ^ option_text view.placeholder
+        | Photo_picker -> " selected=" ^ option_text view.placeholder
         | _ -> ""
       in
       let camera_capture =
         match view.kind with
-        | Camera_capture ->
-          " captured=" ^ option_text view.placeholder
+        | Camera_capture -> " captured=" ^ option_text view.placeholder
         | _ -> ""
       in
       let file_exporter =
         match view.file_export with
         | Some export ->
-          sprintf
-            " filename=%s content_type=%s"
-            export.filename
-            export.content_type
+          sprintf " filename=%s content_type=%s" export.filename export.content_type
         | None -> ""
       in
       let share_link =
@@ -3542,7 +3812,9 @@ module For_testing = struct
                    " panel=liquid-glass corner-radius=%g transparent=%s tint=%s:%g"
                    corner_radius
                    (Bool.to_string is_transparent)
-                   (Option.value (Option.map tint_color ~f:text_color_name) ~default:"none")
+                   (Option.value
+                      (Option.map tint_color ~f:text_color_name)
+                      ~default:"none")
                    tint_opacity)
             | Rendered_regular_material_panel { corner_radius } ->
               Some (sprintf " panel=regular-material corner-radius=%g" corner_radius)
@@ -3589,7 +3861,9 @@ module For_testing = struct
                         | Destructive -> "destructive"
                       in
                       let action_text = action.title ^ ":" ^ system_image ^ ":" ^ style in
-                      if action.starts_section then [ "divider"; action_text ] else [ action_text ])
+                      if action.starts_section
+                      then [ "divider"; action_text ]
+                      else [ action_text ])
                     |> String.concat ~sep:","
                   in
                   ":menu=[" ^ action_text ^ "]"
@@ -3653,14 +3927,7 @@ module For_testing = struct
         match
           List.find_map view.modifiers ~f:(function
             | Rendered_alert
-                { is_presented = true
-                ; title
-                ; message
-                ; text
-                ; placeholder
-                ; actions
-                ; _
-                } ->
+                { is_presented = true; title; message; text; placeholder; actions; _ } ->
               Some (title, message, text, placeholder, actions)
             | _ -> None)
         with
@@ -3778,8 +4045,7 @@ module For_testing = struct
         | _, [] -> ""
         | Sidebar_split, tabs ->
           " routes=[" ^ String.concat ~sep:"," (List.map tabs ~f:tab_name) ^ "]"
-        | _, tabs ->
-          " tabs=[" ^ String.concat ~sep:"," (List.map tabs ~f:tab_name) ^ "]"
+        | _, tabs -> " tabs=[" ^ String.concat ~sep:"," (List.map tabs ~f:tab_name) ^ "]"
       in
       let compact_top_bar =
         match view.kind with
@@ -3788,11 +4054,13 @@ module For_testing = struct
           " sidebar-drawer=full-screen sidebar-padding=12 sidebar-header-title="
           ^ title
           ^ " sidebar-primary-row-height=52 sidebar-selected-corner-radius=12"
-          ^ " sidebar-safe-area-padding=swift top=max-safe-area-plus-5-or-54 bottom=max-safe-area-or-34"
+          ^ " sidebar-safe-area-padding=swift top=max-safe-area-plus-5-or-54 \
+             bottom=max-safe-area-or-34"
           ^ " sidebar-bottom-controls=safe-area-inset top-padding=10"
           ^ " sidebar-scroll-disabled=dragging content-scroll-disabled=open-or-dragging"
           ^ " sidebar-edge-gesture=enabled-when-compact-top-bar-visible"
-          ^ " sidebar-open-close=swift-interactive-spring keyboard-dismiss haptic-on-change"
+          ^ " sidebar-open-close=swift-interactive-spring keyboard-dismiss \
+             haptic-on-change"
           ^ " sidebar-search-style=liquid-glass compact-top-bar=system-toolbar"
           ^ " toolbaritem-leading=sidebar-toggle toolbaritem-title=navigation-title"
           ^ " toolbaritem-leading-chrome=liquid-glass"
@@ -3919,8 +4187,7 @@ module For_testing = struct
         match view.kind, view.children with
         | Navigation_link, [ (_, label); _ ] ->
           let label_lines =
-            (spaces ^ "  label:")
-            :: show_lines label ~indent:(indent + 4)
+            (spaces ^ "  label:") :: show_lines label ~indent:(indent + 4)
           in
           if view.navigation_is_active
           then (
@@ -3971,67 +4238,67 @@ module For_testing = struct
             :: show_lines content ~indent:(indent + 4)
           | _ -> [])
       in
-      (spaces
-       ^ kind_name view.kind
-       ^ "#"
-       ^ Int.to_string view.id
-       ^ key
-       ^ text
-       ^ text_attributes
-       ^ placeholder
-       ^ text_field_style
-       ^ text_field_chrome
-       ^ text_field_axis
-       ^ text_field_secure
-       ^ toggle_selected
-       ^ progress
-       ^ list_behavior
-       ^ slider
-       ^ stepper
-       ^ date_picker
-       ^ color_picker
-       ^ photo_picker
-       ^ camera_capture
-       ^ share_link
-       ^ file_exporter
-       ^ file_importer
-       ^ payload
-       ^ image_source
-       ^ image_color
-       ^ image_style
-       ^ panel
-       ^ system_image
-       ^ button_style
-       ^ menu
-       ^ disclosure
-       ^ button_subtitle
-       ^ title_visibility
-       ^ enabled
-       ^ navigation_path
-       ^ selected
-       ^ tabs
-       ^ compact_top_bar
-       ^ sidebar_header_action
-       ^ sidebar_actions
-       ^ sidebar_history_title
-       ^ sidebar_history_actions
-       ^ sidebar_history_menu_presentation
-       ^ sidebar_bottom_search
-       ^ sidebar_bottom_action
-       ^ sidebar_bottom_action_chrome
-       ^ section
-       ^ picker
-       ^ list_row
-       ^ searchable_prompt
-       ^ context_menu
-       ^ modifiers
-       ^ sheet_detents
-       ^ toolbar
-       ^ navigation_title
-       ^ alert
-       ^ confirmation_dialog
-       ^ popover)
-      :: safe_area_inset_lines
+      ((spaces
+        ^ kind_name view.kind
+        ^ "#"
+        ^ Int.to_string view.id
+        ^ key
+        ^ text
+        ^ text_attributes
+        ^ placeholder
+        ^ text_field_style
+        ^ text_field_chrome
+        ^ text_field_axis
+        ^ text_field_secure
+        ^ toggle_selected
+        ^ progress
+        ^ list_behavior
+        ^ slider
+        ^ stepper
+        ^ date_picker
+        ^ color_picker
+        ^ photo_picker
+        ^ camera_capture
+        ^ share_link
+        ^ file_exporter
+        ^ file_importer
+        ^ payload
+        ^ image_source
+        ^ image_color
+        ^ image_style
+        ^ panel
+        ^ system_image
+        ^ button_style
+        ^ menu
+        ^ disclosure
+        ^ button_subtitle
+        ^ title_visibility
+        ^ enabled
+        ^ navigation_path
+        ^ selected
+        ^ tabs
+        ^ compact_top_bar
+        ^ sidebar_header_action
+        ^ sidebar_actions
+        ^ sidebar_history_title
+        ^ sidebar_history_actions
+        ^ sidebar_history_menu_presentation
+        ^ sidebar_bottom_search
+        ^ sidebar_bottom_action
+        ^ sidebar_bottom_action_chrome
+        ^ section
+        ^ picker
+        ^ list_row
+        ^ searchable_prompt
+        ^ context_menu
+        ^ modifiers
+        ^ sheet_detents
+        ^ toolbar
+        ^ navigation_title
+        ^ alert
+        ^ confirmation_dialog
+        ^ popover)
+       :: safe_area_inset_lines)
       @ child_lines
       @ popover_lines
       @ sheet_lines
@@ -4054,8 +4321,8 @@ module For_testing = struct
       | index :: rest ->
         let view =
           match view.kind, active_navigation_destination view with
-          | Navigation_stack, Some destination
-          | Navigation_path_stack, Some destination -> destination
+          | Navigation_stack, Some destination | Navigation_path_stack, Some destination
+            -> destination
           | _ -> view
         in
         (match List.nth view.children index with
@@ -4064,7 +4331,6 @@ module For_testing = struct
     ;;
 
     let find_visible_exn view ~path = find_exn view ~path |> visible_view
-
     let show_at_path view ~path = show (find_exn view ~path)
 
     let safe_area_inset_bottom_content_exn view =
@@ -4351,7 +4617,9 @@ module For_testing = struct
     ;;
 
     let click_nested_sheet_exn view ~path ~host_path ~sheet_path =
-      click_exn (presented_sheet_content_exn (nested_sheet_host_exn view ~path ~host_path)) ~path:sheet_path
+      click_exn
+        (presented_sheet_content_exn (nested_sheet_host_exn view ~path ~host_path))
+        ~path:sheet_path
     ;;
 
     let change_nested_sheet_text_exn view ~path ~host_path ~sheet_path ~text =
@@ -4368,7 +4636,10 @@ module For_testing = struct
 
     let select_sheet_photo_payload_exn view ~path ~sheet_path ~payload =
       let view = find_sheet_host_exn view ~path in
-      select_photo_payload_exn (presented_sheet_content_exn view) ~path:sheet_path ~payload
+      select_photo_payload_exn
+        (presented_sheet_content_exn view)
+        ~path:sheet_path
+        ~payload
     ;;
 
     let capture_sheet_camera_exn view ~path ~sheet_path ~image_id =
@@ -4378,13 +4649,17 @@ module For_testing = struct
 
     let capture_sheet_camera_payload_exn view ~path ~sheet_path ~payload =
       let view = find_sheet_host_exn view ~path in
-      capture_camera_payload_exn (presented_sheet_content_exn view) ~path:sheet_path ~payload
+      capture_camera_payload_exn
+        (presented_sheet_content_exn view)
+        ~path:sheet_path
+        ~payload
     ;;
 
     let change_alert_text_exn view ~text =
       match
         List.find_map view.modifiers ~f:(function
-          | Rendered_alert { is_presented = true; on_text_change = Some on_text_change; _ } ->
+          | Rendered_alert
+              { is_presented = true; on_text_change = Some on_text_change; _ } ->
             Some on_text_change
           | _ -> None)
       with
@@ -4489,11 +4764,7 @@ module For_testing = struct
         view.file_export <- action.file_export;
         schedule_event_exn view action.on_click
       | None ->
-        failwithf
-          "View has no toolbar menu action with id %S and title %S"
-          id
-          title
-          ()
+        failwithf "View has no toolbar menu action with id %S and title %S" id title ()
     ;;
 
     let dismiss_sheet_exn view ~path =
@@ -4531,22 +4802,22 @@ module For_testing = struct
       match view.sidebar_header_action with
       | Some action when String.equal action.id id -> action.on_click ()
       | Some action ->
-        failwithf
-          "Expected sidebar header action id %s but found %s"
-          id
-          action.id
-          ()
+        failwithf "Expected sidebar header action id %s but found %s" id action.id ()
       | None -> failwith "View has no sidebar header action"
     ;;
 
     let click_sidebar_action_exn view ~id =
-      match List.find view.sidebar_actions ~f:(fun action -> String.equal action.id id) with
+      match
+        List.find view.sidebar_actions ~f:(fun action -> String.equal action.id id)
+      with
       | Some action -> action.on_click ()
       | None -> failwithf "View has no sidebar action with id %s" id ()
     ;;
 
     let click_sidebar_action_menu_action_exn view ~id ~title =
-      match List.find view.sidebar_actions ~f:(fun action -> String.equal action.id id) with
+      match
+        List.find view.sidebar_actions ~f:(fun action -> String.equal action.id id)
+      with
       | None -> failwithf "View has no sidebar action with id %s" id ()
       | Some action ->
         (match
@@ -4555,16 +4826,13 @@ module For_testing = struct
          with
          | Some menu_action -> menu_action.on_click ()
          | None ->
-           failwithf
-             "Sidebar action %s has no menu action with title %S"
-             id
-             title
-             ())
+           failwithf "Sidebar action %s has no menu action with title %S" id title ())
     ;;
 
     let click_sidebar_history_action_exn view ~id =
       match
-        List.find view.sidebar_history_actions ~f:(fun action -> String.equal action.id id)
+        List.find view.sidebar_history_actions ~f:(fun action ->
+          String.equal action.id id)
       with
       | Some action -> action.on_click ()
       | None -> failwithf "View has no sidebar history action with id %s" id ()
@@ -4572,7 +4840,8 @@ module For_testing = struct
 
     let click_sidebar_history_action_menu_action_exn view ~id ~title =
       match
-        List.find view.sidebar_history_actions ~f:(fun action -> String.equal action.id id)
+        List.find view.sidebar_history_actions ~f:(fun action ->
+          String.equal action.id id)
       with
       | None -> failwithf "View has no sidebar history action with id %s" id ()
       | Some action ->
@@ -4593,11 +4862,7 @@ module For_testing = struct
       match view.sidebar_bottom_action with
       | Some action when String.equal action.id id -> action.on_click ()
       | Some action ->
-        failwithf
-          "Expected sidebar bottom action id %s but found %s"
-          id
-          action.id
-          ()
+        failwithf "Expected sidebar bottom action id %s but found %s" id action.id ()
       | None -> failwith "View has no sidebar bottom action"
     ;;
 
@@ -4622,7 +4887,9 @@ module For_testing = struct
 
     let click_row_action_exn view ~path ~title =
       let view = find_visible_exn view ~path |> navigation_link_label_or_self in
-      match List.find view.row_actions ~f:(fun action -> String.equal action.title title) with
+      match
+        List.find view.row_actions ~f:(fun action -> String.equal action.title title)
+      with
       | Some action -> action.on_click ()
       | None -> failwithf "View has no row action with title %S" title ()
     ;;
@@ -4647,6 +4914,13 @@ module For_testing = struct
       with
       | Some action -> action.on_click ()
       | None -> failwithf "View has no row menu action with title %S" title ()
+    ;;
+
+    let appear_exn view ~path =
+      let view = find_visible_exn view ~path in
+      match view.on_appear with
+      | Some on_appear -> on_appear ()
+      | None -> failwith "View has no appear handler"
     ;;
 
     let click_sheet_row_menu_action_exn view ~path ~sheet_path ~title =

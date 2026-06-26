@@ -296,6 +296,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var navigationActivateEventId: Int32?
   @Published var navigationDeactivateEventId: Int32?
   @Published var tapEventId: Int32?
+  @Published var appearEventId: Int32?
   @Published var changeEventId: Int32?
   @Published var isSearchable = false
   @Published var searchText = ""
@@ -1247,17 +1248,19 @@ private struct BonsaiNativeNodeView: View {
   @ViewBuilder
   private func applyModifiers<Content: View>(to content: Content) -> some View {
     let base = bottomSafeAreaInset(
-      tapAction(
-        contextMenu(
-          regularMaterialPanel(
-            secondaryFillPanel(
-              liquidGlassPanel(
-                content
-                .padding(node.padding ?? EdgeInsets())
-                .frame(
-                  width: node.frameWidth,
-                  height: node.frameHeight,
-                  alignment: .topLeading
+      appearAction(
+        tapAction(
+          contextMenu(
+            regularMaterialPanel(
+              secondaryFillPanel(
+                liquidGlassPanel(
+                  content
+                  .padding(node.padding ?? EdgeInsets())
+                  .frame(
+                    width: node.frameWidth,
+                    height: node.frameHeight,
+                    alignment: .topLeading
+                  )
                 )
               )
             )
@@ -1459,6 +1462,18 @@ private struct BonsaiNativeNodeView: View {
         .contentShape(.rect)
         .onTapGesture {
           model.sendClick(tapEventId)
+        }
+    } else {
+      content
+    }
+  }
+
+  @ViewBuilder
+  private func appearAction<AppearContent: View>(_ content: AppearContent) -> some View {
+    if let appearEventId = node.appearEventId {
+      content
+        .onAppear {
+          model.sendClick(appearEventId)
         }
     } else {
       content
@@ -1715,6 +1730,11 @@ public func bonsai_native_swiftui_set_navigation_link_value(
 @_cdecl("bonsai_native_swiftui_set_tap_action")
 public func bonsai_native_swiftui_set_tap_action(_ pointer: UnsafeMutableRawPointer?, _ eventId: Int32) {
   nativeNode(from: pointer)?.tapEventId = eventId < 0 ? nil : eventId
+}
+
+@_cdecl("bonsai_native_swiftui_set_on_appear")
+public func bonsai_native_swiftui_set_on_appear(_ pointer: UnsafeMutableRawPointer?, _ eventId: Int32) {
+  nativeNode(from: pointer)?.appearEventId = eventId < 0 ? nil : eventId
 }
 
 @_cdecl("bonsai_native_swiftui_set_on_change")

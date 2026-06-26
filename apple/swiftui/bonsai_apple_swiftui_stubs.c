@@ -68,6 +68,7 @@ extern void bonsai_native_swiftui_set_navigation_link_callbacks(
   int32_t deactivate_event_id);
 extern void bonsai_native_swiftui_set_navigation_link_value(void *node, const char *value);
 extern void bonsai_native_swiftui_set_tap_action(void *node, int32_t event_id);
+extern void bonsai_native_swiftui_set_on_appear(void *node, int32_t event_id);
 extern void bonsai_native_swiftui_set_on_change(void *node, int32_t event_id);
 extern void bonsai_native_swiftui_set_list_row_subtitle(void *node, const char *subtitle);
 extern void bonsai_native_swiftui_set_list_row_trailing_text(
@@ -819,6 +820,13 @@ CAMLprim value bonsai_apple_swiftui_set_tap_action(value node, value event_id)
 {
   CAMLparam2(node, event_id);
   bonsai_native_swiftui_set_tap_action(pointer_val(node), Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_on_appear(value node, value event_id)
+{
+  CAMLparam2(node, event_id);
+  bonsai_native_swiftui_set_on_appear(pointer_val(node), Int_val(event_id));
   CAMLreturn(Val_unit);
 }
 

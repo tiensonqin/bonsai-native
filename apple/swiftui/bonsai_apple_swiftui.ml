@@ -88,7 +88,12 @@ external run_application
   = "bonsai_apple_swiftui_run_application"
 
 external run_on_main : (unit -> unit) -> unit = "bonsai_apple_swiftui_run_on_main"
-external set_native_clipboard_text : string -> unit = "bonsai_apple_swiftui_set_clipboard_text"
+
+external set_native_clipboard_text
+  :  string
+  -> unit
+  = "bonsai_apple_swiftui_set_clipboard_text"
+
 external set_native_clipboard_image_file
   :  string
   -> unit
@@ -143,6 +148,7 @@ let audio_recording_result_of_native value =
 let () = Apple.set_clipboard_text_handler set_native_clipboard_text
 let () = Apple.set_clipboard_image_file_handler set_native_clipboard_image_file
 let () = Apple.set_toggle_audio_file_playback_handler toggle_native_audio_file_playback
+
 let () =
   Apple.set_audio_recording_handlers
     ~start:start_native_audio_recording
@@ -217,11 +223,7 @@ external set_native_text_attributes
   -> unit
   = "bonsai_apple_swiftui_set_text_attributes"
 
-external set_native_enabled
-  :  native
-  -> bool
-  -> unit
-  = "bonsai_apple_swiftui_set_enabled"
+external set_native_enabled : native -> bool -> unit = "bonsai_apple_swiftui_set_enabled"
 
 external set_native_placeholder
   :  native
@@ -303,11 +305,7 @@ external set_native_list_behavior
   -> unit
   = "bonsai_apple_swiftui_set_list_behavior"
 
-external set_native_on_click
-  :  native
-  -> int
-  -> unit
-  = "bonsai_apple_swiftui_set_on_click"
+external set_native_on_click : native -> int -> unit = "bonsai_apple_swiftui_set_on_click"
 
 external set_native_navigation_link_callbacks
   :  native
@@ -327,6 +325,12 @@ external set_native_tap_action
   -> int
   -> unit
   = "bonsai_apple_swiftui_set_tap_action"
+
+external set_native_on_appear
+  :  native
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_on_appear"
 
 external set_native_on_change
   :  native
@@ -665,10 +669,7 @@ external set_native_navigation_title
   -> unit
   = "bonsai_apple_swiftui_set_navigation_title"
 
-external clear_native_toolbar
-  :  native
-  -> unit
-  = "bonsai_apple_swiftui_clear_toolbar"
+external clear_native_toolbar : native -> unit = "bonsai_apple_swiftui_clear_toolbar"
 
 external append_native_toolbar_item
   :  native
@@ -738,7 +739,8 @@ external clear_native_sidebar_shell
   -> string
   -> int
   -> unit
-  = "bonsai_apple_swiftui_clear_sidebar_shell_bytecode" "bonsai_apple_swiftui_clear_sidebar_shell"
+  = "bonsai_apple_swiftui_clear_sidebar_shell_bytecode"
+    "bonsai_apple_swiftui_clear_sidebar_shell"
 
 external set_native_sidebar_header_action
   :  native
@@ -820,7 +822,11 @@ external update_native_controller
   -> unit
   = "bonsai_apple_swiftui_update_controller"
 
-external release_controller : controller -> unit = "bonsai_apple_swiftui_release_controller"
+external release_controller
+  :  controller
+  -> unit
+  = "bonsai_apple_swiftui_release_controller"
+
 external make_native_window : native -> window = "bonsai_apple_swiftui_make_window"
 external release_window : window -> unit = "bonsai_apple_swiftui_release_window"
 
@@ -845,16 +851,15 @@ module Http = struct
 
   let send_json request =
     fun () ->
-      let result = ref (Error "request did not complete synchronously") in
-      http_send_json_native
-        request.method_
-        request.url
-        request.authorization
-        request.body
-        request.timeout_seconds
-        (fun success response ->
-          result := if success then Ok response else Error response);
-      !result
+    let result = ref (Error "request did not complete synchronously") in
+    http_send_json_native
+      request.method_
+      request.url
+      request.authorization
+      request.body
+      request.timeout_seconds
+      (fun success response -> result := if success then Ok response else Error response);
+    !result
   ;;
 end
 
@@ -938,6 +943,7 @@ module Backend = struct
     ; mutable navigation_activate_event_id : int option
     ; mutable navigation_deactivate_event_id : int option
     ; mutable tap_event_id : int option
+    ; mutable appear_event_id : int option
     ; mutable change_event_id : int option
     ; mutable search_event_id : int option
     ; mutable tab_select_event_id : int option
@@ -963,10 +969,11 @@ module Backend = struct
      | Apple.Custom_view kind -> set_native_text native kind
      | _ -> ());
     { native
-      ; click_event_id = None
-      ; navigation_activate_event_id = None
-      ; navigation_deactivate_event_id = None
-      ; tap_event_id = None
+    ; click_event_id = None
+    ; navigation_activate_event_id = None
+    ; navigation_deactivate_event_id = None
+    ; tap_event_id = None
+    ; appear_event_id = None
     ; change_event_id = None
     ; search_event_id = None
     ; tab_select_event_id = None
@@ -989,6 +996,7 @@ module Backend = struct
   let destroy view =
     clear_handler view.click_event_id;
     clear_handler view.tap_event_id;
+    clear_handler view.appear_event_id;
     clear_handler view.change_event_id;
     clear_handler view.search_event_id;
     clear_handler view.tab_select_event_id;
@@ -1010,8 +1018,13 @@ module Backend = struct
   ;;
 
   let set_text view text = set_native_text view.native text
-  let set_system_image view system_image = set_native_system_image view.native system_image
+
+  let set_system_image view system_image =
+    set_native_system_image view.native system_image
+  ;;
+
   let set_button_subtitle view subtitle = set_native_button_subtitle view.native subtitle
+
   let set_button_style view style =
     let style_id =
       match style with
@@ -1138,11 +1151,12 @@ module Backend = struct
   ;;
 
   let set_progress view ~value = set_native_progress view.native value
-
   let set_spacing view spacing = set_native_spacing view.native spacing
 
   let set_children view ~keyed:_ children =
-    set_native_children view.native (Array.of_list (List.map children ~f:(fun child -> child.native)))
+    set_native_children
+      view.native
+      (Array.of_list (List.map children ~f:(fun child -> child.native)))
   ;;
 
   let set_list_behavior view ~on_refresh ~on_delete ~on_move ~edit_mode =
@@ -1172,12 +1186,12 @@ module Backend = struct
       install_change
         (Option.map on_move ~f:(fun on_move ->
            fun payload ->
-             match String.lsplit2 payload ~on:':' with
-             | Some (from_index, to_index) ->
-               on_move
-                 ~from_index:(Int.of_string from_index)
-                 ~to_index:(Int.of_string to_index)
-             | None -> ()))
+           match String.lsplit2 payload ~on:':' with
+           | Some (from_index, to_index) ->
+             on_move
+               ~from_index:(Int.of_string from_index)
+               ~to_index:(Int.of_string to_index)
+           | None -> ()))
     in
     set_native_list_behavior
       view.native
@@ -1214,17 +1228,17 @@ module Backend = struct
   ;;
 
   let set_sidebar_shell
-    view
-    ~title
-    ~compact_top_bar_visible
-    ~(header_action : Apple.rendered_sidebar_action option)
-    ~(actions : Apple.rendered_sidebar_action list)
-    ~history_title
-    ~(history_actions : Apple.rendered_sidebar_action list)
-    ~bottom_search_placeholder
-    ~bottom_search_text
-    ~bottom_search_on_change
-    ~(bottom_action : Apple.rendered_sidebar_action option)
+        view
+        ~title
+        ~compact_top_bar_visible
+        ~(header_action : Apple.rendered_sidebar_action option)
+        ~(actions : Apple.rendered_sidebar_action list)
+        ~history_title
+        ~(history_actions : Apple.rendered_sidebar_action list)
+        ~bottom_search_placeholder
+        ~bottom_search_text
+        ~bottom_search_on_change
+        ~(bottom_action : Apple.rendered_sidebar_action option)
     =
     List.iter view.sidebar_event_ids ~f:(Hashtbl.remove event_handlers);
     view.sidebar_event_ids <- [];
@@ -1246,7 +1260,9 @@ module Backend = struct
         no_event
       | Some on_change ->
         let event_id =
-          install_handler view.sidebar_search_event_id (Change (fun text -> on_change text))
+          install_handler
+            view.sidebar_search_event_id
+            (Change (fun text -> on_change text))
         in
         view.sidebar_search_event_id <- Some event_id;
         event_id
@@ -1260,7 +1276,8 @@ module Backend = struct
       bottom_search_event_id;
     set_native_sidebar_history_title view.native history_title;
     (match header_action with
-     | None -> set_native_sidebar_header_action view.native None None None None None no_event
+     | None ->
+       set_native_sidebar_header_action view.native None None None None None no_event
      | Some action ->
        set_native_sidebar_header_action
          view.native
@@ -1329,12 +1346,12 @@ module Backend = struct
   let set_section view ~title = set_native_section view.native title
 
   let set_picker
-    view
-    ~title
-    ~selected
-    ~(style : Apple.picker_style)
-    ~on_select
-    (options : Apple.rendered_picker_option list)
+        view
+        ~title
+        ~selected
+        ~(style : Apple.picker_style)
+        ~on_select
+        (options : Apple.rendered_picker_option list)
     =
     let event_id =
       match on_select with
@@ -1368,8 +1385,9 @@ module Backend = struct
         no_event
       | Some on_change ->
         let event_id =
-          install_handler view.change_event_id (Change (fun value ->
-            on_change (Float.of_string value)))
+          install_handler
+            view.change_event_id
+            (Change (fun value -> on_change (Float.of_string value)))
         in
         view.change_event_id <- Some event_id;
         event_id
@@ -1386,8 +1404,9 @@ module Backend = struct
         no_event
       | Some on_change ->
         let event_id =
-          install_handler view.change_event_id (Change (fun value ->
-            on_change (Int.of_string value)))
+          install_handler
+            view.change_event_id
+            (Change (fun value -> on_change (Int.of_string value)))
         in
         view.change_event_id <- Some event_id;
         event_id
@@ -1430,7 +1449,13 @@ module Backend = struct
     | Apple.Destructive -> 1
   ;;
 
-  let set_menu view ~title ~system_image ~(actions : Apple.menu_action list) ~schedule_event =
+  let set_menu
+        view
+        ~title
+        ~system_image
+        ~(actions : Apple.menu_action list)
+        ~schedule_event
+    =
     List.iter view.menu_event_ids ~f:(Hashtbl.remove event_handlers);
     view.menu_event_ids <- [];
     clear_native_menu view.native title system_image;
@@ -1458,8 +1483,9 @@ module Backend = struct
         no_event
       | Some on_change ->
         let event_id =
-          install_handler view.change_event_id (Change (fun value ->
-            on_change (Bool.of_string value)))
+          install_handler
+            view.change_event_id
+            (Change (fun value -> on_change (Bool.of_string value)))
         in
         view.change_event_id <- Some event_id;
         event_id
@@ -1476,11 +1502,14 @@ module Backend = struct
         no_event
       | Some on_path_change ->
         let event_id =
-          install_handler view.change_event_id (Change (fun payload ->
-            let path =
-              if String.is_empty payload then [] else String.split payload ~on:'\n'
-            in
-            on_path_change path))
+          install_handler
+            view.change_event_id
+            (Change
+               (fun payload ->
+                 let path =
+                   if String.is_empty payload then [] else String.split payload ~on:'\n'
+                 in
+                 on_path_change path))
         in
         view.change_event_id <- Some event_id;
         event_id
@@ -1518,10 +1547,7 @@ module Backend = struct
         view.change_event_id <- Some event_id;
         event_id
     in
-    set_native_file_importer
-      view.native
-      (Array.of_list allowed_content_types)
-      event_id
+    set_native_file_importer view.native (Array.of_list allowed_content_types) event_id
   ;;
 
   let set_image_payload_mode view wants_payload =
@@ -1580,6 +1606,18 @@ module Backend = struct
       set_native_tap_action view.native event_id
   ;;
 
+  let set_on_appear view handler =
+    match handler with
+    | None ->
+      clear_handler view.appear_event_id;
+      view.appear_event_id <- None;
+      set_native_on_appear view.native no_event
+    | Some handler ->
+      let event_id = install_handler view.appear_event_id (Click handler) in
+      view.appear_event_id <- Some event_id;
+      set_native_on_appear view.native event_id
+  ;;
+
   let set_on_change view handler =
     match handler with
     | None ->
@@ -1615,11 +1653,7 @@ module Backend = struct
     !next_event_id
   ;;
 
-  let install_context_menu
-        view
-        ~schedule_event
-        ~(actions : Apple.row_action list)
-    =
+  let install_context_menu view ~schedule_event ~(actions : Apple.row_action list) =
     List.iter view.context_menu_event_ids ~f:(Hashtbl.remove event_handlers);
     view.context_menu_event_ids <- [];
     clear_native_context_menu_actions view.native;
@@ -1637,11 +1671,11 @@ module Backend = struct
   ;;
 
   let refresh_list_row_callbacks
-    view
-    ~on_click
-    ~(leading_button : Apple.rendered_row_leading_button option)
-    ~(swipe_actions : Apple.rendered_row_action list)
-    ~(menu_actions : Apple.rendered_row_action list)
+        view
+        ~on_click
+        ~(leading_button : Apple.rendered_row_leading_button option)
+        ~(swipe_actions : Apple.rendered_row_action list)
+        ~(menu_actions : Apple.rendered_row_action list)
     =
     set_on_click view on_click;
     clear_row_events view;
@@ -1671,18 +1705,18 @@ module Backend = struct
   ;;
 
   let set_list_row
-    view
-    ~title
-    ~subtitle
-    ~trailing_text
-    ~leading_system_image
-    ~preview_image_path
-    ~content_style
-    ~accessory
-    ~title_strikethrough
-    ~(leading_button : Apple.rendered_row_leading_button option)
-    ~(swipe_actions : Apple.rendered_row_action list)
-    ~(menu_actions : Apple.rendered_row_action list)
+        view
+        ~title
+        ~subtitle
+        ~trailing_text
+        ~leading_system_image
+        ~preview_image_path
+        ~content_style
+        ~accessory
+        ~title_strikethrough
+        ~(leading_button : Apple.rendered_row_leading_button option)
+        ~(swipe_actions : Apple.rendered_row_action list)
+        ~(menu_actions : Apple.rendered_row_action list)
     =
     clear_row_events view;
     set_native_text view.native title;
@@ -1819,16 +1853,16 @@ module Backend = struct
   ;;
 
   let install_alert
-    view
-    ~schedule_event
-    ~is_presented
-    ~title
-    ~message
-    ~text
-    ~placeholder
-    ~on_text_change
-    ~actions
-    ~on_dismiss
+        view
+        ~schedule_event
+        ~is_presented
+        ~title
+        ~message
+        ~text
+        ~placeholder
+        ~on_text_change
+        ~actions
+        ~on_dismiss
     =
     clear_alert_events view;
     let install_click action =
@@ -1845,9 +1879,7 @@ module Backend = struct
       match text, on_text_change with
       | Some _, Some on_text_change ->
         let event_id =
-          install_handler
-            None
-            (Change (fun text -> schedule_event (on_text_change text)))
+          install_handler None (Change (fun text -> schedule_event (on_text_change text)))
         in
         view.alert_event_ids <- event_id :: view.alert_event_ids;
         event_id
@@ -1874,13 +1906,13 @@ module Backend = struct
   ;;
 
   let install_confirmation_dialog
-    view
-    ~schedule_event
-    ~is_presented
-    ~title
-    ~message
-    ~actions
-    ~on_dismiss
+        view
+        ~schedule_event
+        ~is_presented
+        ~title
+        ~message
+        ~actions
+        ~on_dismiss
     =
     List.iter view.confirmation_dialog_event_ids ~f:(Hashtbl.remove event_handlers);
     view.confirmation_dialog_event_ids <- [];
@@ -1923,7 +1955,9 @@ module Backend = struct
     view.toolbar_event_ids <- [];
     clear_native_toolbar view.native;
     List.iter items ~f:(fun (item : Apple.toolbar_item) ->
-      let event_id = install_handler None (Click (fun () -> schedule_event item.on_click)) in
+      let event_id =
+        install_handler None (Click (fun () -> schedule_event item.on_click))
+      in
       view.toolbar_event_ids <- event_id :: view.toolbar_event_ids;
       append_native_toolbar_item
         view.native
@@ -1974,6 +2008,7 @@ module Backend = struct
     let saw_frame = ref false in
     let saw_navigation_title = ref false in
     let saw_tap_action = ref false in
+    let saw_on_appear = ref false in
     let saw_keyboard_dismiss_controls = ref false in
     let saw_scroll_dismisses_keyboard = ref false in
     List.iter modifiers ~f:(function
@@ -2058,6 +2093,9 @@ module Backend = struct
       | Apple.Rendered_tap_action { on_click } ->
         saw_tap_action := true;
         set_tap_action view (Some (fun () -> schedule_event on_click))
+      | Apple.Rendered_on_appear { on_appear } ->
+        saw_on_appear := true;
+        set_on_appear view (Some (fun () -> schedule_event on_appear))
       | Apple.Rendered_keyboard_dismiss_controls ->
         saw_keyboard_dismiss_controls := true;
         set_native_keyboard_dismiss_controls view.native true
@@ -2082,6 +2120,7 @@ module Backend = struct
     if not !saw_frame then set_native_frame view.native (-1.) (-1.);
     if not !saw_navigation_title then set_native_navigation_title view.native None;
     if not !saw_tap_action then set_tap_action view None;
+    if not !saw_on_appear then set_on_appear view None;
     if not !saw_keyboard_dismiss_controls
     then set_native_keyboard_dismiss_controls view.native false;
     if not !saw_scroll_dismisses_keyboard
@@ -2101,5 +2140,8 @@ let controller view =
     controller
 ;;
 
-let update_controller controller view = update_native_controller controller view.Backend.native
+let update_controller controller view =
+  update_native_controller controller view.Backend.native
+;;
+
 let window view = make_native_window view.Backend.native

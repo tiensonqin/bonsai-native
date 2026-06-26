@@ -2,9 +2,7 @@ module Apple = Bonsai_apple
 module Backend = Apple.For_testing.Backend
 module App = Apple.App.Make (Backend)
 
-let require condition message =
-  if not condition then failwith message
-;;
+let require condition message = if not condition then failwith message
 
 let contains text ~substring =
   let text_length = String.length text in
@@ -49,8 +47,7 @@ let test_scoped_state_is_independent () =
   in
   Backend.reset ();
   let app =
-    App.create (fun graph ->
-      Apple.vstack [ scoped "a" graph; scoped "b" graph ])
+    App.create (fun graph -> Apple.vstack [ scoped "a" graph; scoped "b" graph ])
   in
   App.flush_and_render app;
   let root =
@@ -142,11 +139,13 @@ let test_sidebar_history_actions_are_separate_and_clickable () =
     (contains
        rendered
        ~substring:
-         "sidebar-history-actions=[conversation-1:Find DNA cards:preview=You: Find DNA cards:menu=[Rename:pencil:default]]")
+         "sidebar-history-actions=[conversation-1:Find DNA cards:preview=You: Find DNA \
+          cards:menu=[Rename:pencil:default]]")
     "history action should render separately";
   require
     (contains rendered ~substring:"sidebar-history-menu-presentation=context-menu")
-    "history actions should use Swift-style context menus instead of replacing the row button";
+    "history actions should use Swift-style context menus instead of replacing the row \
+     button";
   Backend.click_sidebar_history_action_exn root ~id:"conversation-1";
   require
     (Backend.find_text_exn root ~path:[ 0 ] = "conversation")
@@ -182,38 +181,36 @@ let test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome () =
     (contains
        rendered
        ~substring:
-         "compact-top-bar=system-toolbar toolbaritem-leading=sidebar-toggle toolbaritem-title=navigation-title")
-    "compact top bar should use system toolbar items like the Swift header"
-  ;
+         "compact-top-bar=system-toolbar toolbaritem-leading=sidebar-toggle \
+          toolbaritem-title=navigation-title")
+    "compact top bar should use system toolbar items like the Swift header";
   require
     (contains rendered ~substring:"toolbaritem-leading-chrome=liquid-glass")
-    "compact sidebar leading toolbar item should use the same liquid glass chrome as Swift"
-  ;
+    "compact sidebar leading toolbar item should use the same liquid glass chrome as \
+     Swift";
   require
     (contains
        rendered
        ~substring:
-         "sidebar-safe-area-padding=swift top=max-safe-area-plus-5-or-54 bottom=max-safe-area-or-34")
-    "compact sidebar should use the same safe-area padding as the Swift drawer"
-  ;
+         "sidebar-safe-area-padding=swift top=max-safe-area-plus-5-or-54 \
+          bottom=max-safe-area-or-34")
+    "compact sidebar should use the same safe-area padding as the Swift drawer";
   require
     (contains
        rendered
        ~substring:"sidebar-bottom-controls=safe-area-inset top-padding=10")
-    "compact sidebar bottom controls should match the Swift safe-area inset layout"
-  ;
+    "compact sidebar bottom controls should match the Swift safe-area inset layout";
   require
     (contains
        rendered
-       ~substring:"sidebar-scroll-disabled=dragging content-scroll-disabled=open-or-dragging")
-    "compact sidebar should disable scroll during the same drawer states as Swift"
-  ;
+       ~substring:
+         "sidebar-scroll-disabled=dragging content-scroll-disabled=open-or-dragging")
+    "compact sidebar should disable scroll during the same drawer states as Swift";
   require
     (contains
        rendered
        ~substring:"sidebar-edge-gesture=enabled-when-compact-top-bar-visible")
-    "compact sidebar edge gesture should follow the same route gating as Swift"
-  ;
+    "compact sidebar edge gesture should follow the same route gating as Swift";
   require
     (contains
        rendered
@@ -337,15 +334,34 @@ let test_button_renders_plain_style () =
     "plain button style should be visible to native renderers"
 ;;
 
+let test_on_appear_event_rerenders_component_state () =
+  Backend.reset ();
+  let component graph =
+    let count, set_count = Apple.state graph ~key:"count" 0 in
+    Apple.vstack
+      [ Apple.text (string_of_int count)
+      ; Apple.text "sentinel" |> Apple.on_appear ~on_appear:(set_count (count + 1))
+      ]
+  in
+  let app = App.create component in
+  App.flush_and_render app;
+  let root =
+    match App.view app with
+    | Some root -> root
+    | None -> failwith "app did not render"
+  in
+  require (Backend.find_text_exn root ~path:[ 0 ] = "0") "initial count should be 0";
+  Backend.appear_exn root ~path:[ 1 ];
+  require (Backend.find_text_exn root ~path:[ 0 ] = "1") "appear should rerender count"
+;;
+
 let test_searchable_renders_prompt () =
   Backend.reset ();
   let component _graph =
     Apple.navigation_stack
       [ Apple.text "Cards"
-        |> Apple.searchable
-             ~text:""
-             ~prompt:"Search cards"
-             ~on_change:(fun _ -> Apple.Action.ignore)
+        |> Apple.searchable ~text:"" ~prompt:"Search cards" ~on_change:(fun _ ->
+          Apple.Action.ignore)
       ]
   in
   let app = App.create component in
@@ -403,7 +419,9 @@ let test_liquid_glass_panel_renders () =
   in
   let rendered = Backend.show root in
   require
-    (contains rendered ~substring:"panel=liquid-glass corner-radius=22 transparent=true tint=green:0.1")
+    (contains
+       rendered
+       ~substring:"panel=liquid-glass corner-radius=22 transparent=true tint=green:0.1")
     "liquid glass panel should be visible to native renderers"
 ;;
 
@@ -523,8 +541,7 @@ let test_scroll_dismisses_keyboard_renders () =
 let test_secondary_fill_panel_renders () =
   Backend.reset ();
   let component _graph =
-    Apple.text "You: Hello"
-    |> Apple.secondary_fill_panel ~corner_radius:18. ~opacity:0.12
+    Apple.text "You: Hello" |> Apple.secondary_fill_panel ~corner_radius:18. ~opacity:0.12
   in
   let app = App.create component in
   App.flush_and_render app;
@@ -659,18 +676,12 @@ let test_toolbar_item_can_render_share_link () =
        (Backend.show root)
        ~substring:
          "toolbar=[share:Share:enabled:image=square.and.arrow.up:title-hidden:share-url=file:///tmp/photo.png]")
-    "toolbar share items should expose the ShareLink URL"
-  ;
+    "toolbar share items should expose the ShareLink URL";
   require
-    (contains
-       (Backend.show root)
-       ~substring:"toolbar-presentation=system-toolbaritem")
-    "toolbar actions should render through system ToolbarItem chrome"
-  ;
+    (contains (Backend.show root) ~substring:"toolbar-presentation=system-toolbaritem")
+    "toolbar actions should render through system ToolbarItem chrome";
   require
-    (contains
-       (Backend.show root)
-       ~substring:"toolbaritem-chrome=system-default")
+    (contains (Backend.show root) ~substring:"toolbaritem-chrome=system-default")
     "toolbar actions should keep the system ToolbarItem button chrome"
 ;;
 
@@ -680,9 +691,7 @@ let test_movable_rows_move_only_the_group_children () =
     let rec loop index = function
       | [] -> []
       | value :: rest ->
-        if f index value
-        then value :: loop (index + 1) rest
-        else loop (index + 1) rest
+        if f index value then value :: loop (index + 1) rest else loop (index + 1) rest
     in
     loop 0 list
   in
@@ -711,9 +720,7 @@ let test_movable_rows_move_only_the_group_children () =
       | question :: first :: second :: hint :: tail ->
         let rows = [ first; second ] in
         let item = List.nth rows from_index in
-        let remaining =
-          filteri rows ~f:(fun index _ -> index <> from_index)
-        in
+        let remaining = filteri rows ~f:(fun index _ -> index <> from_index) in
         let insert_index = if to_index > from_index then to_index - 1 else to_index in
         let before, after = split_at insert_index remaining in
         set_choices ([ question ] @ before @ [ item ] @ after @ (hint :: tail))
@@ -768,6 +775,7 @@ let () =
   test_button_label_renders_custom_clickable_content ();
   test_button_renders_bordered_prominent_style ();
   test_button_renders_plain_style ();
+  test_on_appear_event_rerenders_component_state ();
   test_searchable_renders_prompt ();
   test_picker_renders_segmented_style ();
   test_liquid_glass_panel_renders ();
@@ -784,3 +792,4 @@ let () =
   test_audio_recording_actions_update_testing_backend ();
   test_toolbar_item_can_render_share_link ();
   test_movable_rows_move_only_the_group_children ()
+;;
