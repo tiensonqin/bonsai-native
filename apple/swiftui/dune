@@ -15,3 +15,10 @@
  (c_library_flags
   (:standard -framework Foundation -framework SwiftUI))
  (libraries bonsai_apple))
+
+(install
+ (section lib)
+ (package bonsai_apple)
+ (files
+  (BonsaiNativeSwiftUI.swift as swiftui/BonsaiNativeSwiftUI.swift)
+  (BonsaiNativeSwiftUIMac.swift as swiftui/BonsaiNativeSwiftUIMac.swift)))
