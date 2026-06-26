@@ -521,6 +521,8 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var isEnabled = true
   @Published var imageSource: Int32 = 0
   @Published var imageColor: Int32 = -1
+  @Published var imageMaxHeight: CGFloat?
+  @Published var imageCornerRadius: CGFloat?
   @Published var placeholder: String?
   @Published var spacing: CGFloat?
   @Published var children: [BonsaiNativeNode] = []
@@ -665,9 +667,16 @@ private struct BonsaiNativeImageView: View {
 
   var body: some View {
     if node.imageSource == 1, let image = UIImage(contentsOfFile: node.text) {
-      Image(uiImage: image)
+      let fileImage = Image(uiImage: image)
         .resizable()
         .scaledToFit()
+      if node.imageMaxHeight != nil || node.imageCornerRadius != nil {
+        fileImage
+          .frame(maxWidth: .infinity, maxHeight: node.imageMaxHeight, alignment: .leading)
+          .clipShape(.rect(cornerRadius: node.imageCornerRadius ?? 0, style: .continuous))
+      } else {
+        fileImage
+      }
     } else {
       let image = Image(systemName: node.text)
       if let color = bonsaiNativeSemanticColor(node.imageColor) {
@@ -3199,6 +3208,17 @@ public func bonsai_native_swiftui_set_image_color(
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.imageColor = color
+}
+
+@_cdecl("bonsai_native_swiftui_set_image_style")
+public func bonsai_native_swiftui_set_image_style(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ maxHeight: Double,
+  _ cornerRadius: Double
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.imageMaxHeight = maxHeight < 0 ? nil : CGFloat(maxHeight)
+  node.imageCornerRadius = cornerRadius < 0 ? nil : CGFloat(cornerRadius)
 }
 
 @_cdecl("bonsai_native_swiftui_set_text_attributes")

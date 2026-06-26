@@ -456,6 +456,27 @@ let test_plain_text_field_renders_plain_style () =
     "plain text fields should expose SwiftUI plain text field style"
 ;;
 
+let test_file_image_can_render_swift_card_image_style () =
+  Backend.reset ();
+  let component _graph =
+    Apple.image_file ~max_height:180. ~corner_radius:8. "/tmp/card.png"
+  in
+  let app = App.create component in
+  App.flush_and_render app;
+  let root =
+    match App.view app with
+    | Some root -> root
+    | None -> failwith "app did not render"
+  in
+  let rendered = Backend.show root in
+  require
+    (contains rendered ~substring:"source=file")
+    "file images should render from the filesystem";
+  require
+    (contains rendered ~substring:"image-style=max-height:\"180\":corner-radius:\"8\"")
+    "file images should expose Swift CardImageView sizing and clipping"
+;;
+
 let test_secondary_fill_panel_renders () =
   Backend.reset ();
   let component _graph =
@@ -709,6 +730,7 @@ let () =
   test_liquid_glass_panel_renders ();
   test_pill_text_field_uses_liquid_glass_chrome ();
   test_plain_text_field_renders_plain_style ();
+  test_file_image_can_render_swift_card_image_style ();
   test_secondary_fill_panel_renders ();
   test_context_menu_renders_and_clicks_actions ();
   test_copy_text_to_clipboard_action_updates_test_clipboard ();

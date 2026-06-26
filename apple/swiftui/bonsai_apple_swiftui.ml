@@ -190,6 +190,13 @@ external set_native_image_color
   -> unit
   = "bonsai_apple_swiftui_set_image_color"
 
+external set_native_image_style
+  :  native
+  -> float
+  -> float
+  -> unit
+  = "bonsai_apple_swiftui_set_image_style"
+
 external set_native_text_attributes
   :  native
   -> int
@@ -1029,6 +1036,18 @@ module Backend = struct
 
   let set_image_color view color =
     set_native_image_color view.native (optional_text_color_id color)
+  ;;
+
+  let optional_float_value = function
+    | None -> -1.
+    | Some value -> value
+  ;;
+
+  let set_image_style view ~max_height ~corner_radius =
+    set_native_image_style
+      view.native
+      (optional_float_value max_height)
+      (optional_float_value corner_radius)
   ;;
 
   let text_style_id = function

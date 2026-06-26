@@ -416,7 +416,7 @@ val sidebar_split
   -> tab list
   -> node
 val image : ?color:text_color -> string -> node
-val image_file : string -> node
+val image_file : ?max_height:float -> ?corner_radius:float -> string -> node
 val photo_picker
   :  ?is_enabled:bool
   -> ?system_image:string
@@ -727,6 +727,7 @@ module Renderer : sig
     val set_text : view -> string -> unit
     val set_system_image : view -> string option -> unit
     val set_image_color : view -> text_color option -> unit
+    val set_image_style : view -> max_height:float option -> corner_radius:float option -> unit
     val set_button_subtitle : view -> string option -> unit
     val set_button_style : view -> button_style -> unit
     val set_title_visible : view -> bool -> unit

@@ -374,6 +374,8 @@ type image =
   { name : string
   ; source : image_source
   ; color : text_color option
+  ; max_height : float option
+  ; corner_radius : float option
   }
 
 type text_field_style =
@@ -1167,8 +1169,13 @@ let sidebar_split
     }
 ;;
 
-let image ?color name = Image_node { name; source = System_image; color }
-let image_file path = Image_node { name = path; source = File_image; color = None }
+let image ?color name =
+  Image_node { name; source = System_image; color; max_height = None; corner_radius = None }
+;;
+
+let image_file ?max_height ?corner_radius path =
+  Image_node { name = path; source = File_image; color = None; max_height; corner_radius }
+;;
 
 let image_payload_header = "bonsai-image-payload"
 
@@ -1524,6 +1531,7 @@ module Renderer = struct
     val set_text : view -> string -> unit
     val set_system_image : view -> string option -> unit
     val set_image_color : view -> text_color option -> unit
+    val set_image_style : view -> max_height:float option -> corner_radius:float option -> unit
     val set_button_subtitle : view -> string option -> unit
     val set_button_style : view -> button_style -> unit
     val set_title_visible : view -> bool -> unit
@@ -1890,6 +1898,10 @@ module Renderer = struct
           ^ string_of_int (Obj.magic image.source)
           ^ ":"
           ^ opt (Option.map image.color ~f:text_color_name)
+          ^ ":"
+          ^ opt (Option.map image.max_height ~f:float)
+          ^ ":"
+          ^ opt (Option.map image.corner_radius ~f:float)
         | Picker_node { title; selected; style; options; on_select = _ } ->
           "picker:"
           ^ title
@@ -2201,10 +2213,11 @@ module Renderer = struct
              (Option.map bottom_search_on_change ~f:(fun on_change ->
                 fun text -> t.schedule_event (on_change text)))
            ~bottom_action:(Option.map bottom_action ~f:render_action)
-       | Image_node { name; source; color } ->
+       | Image_node { name; source; color; max_height; corner_radius } ->
          Backend.set_text t.view name;
          Backend.set_image_source t.view source;
          Backend.set_image_color t.view color;
+         Backend.set_image_style t.view ~max_height ~corner_radius;
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          replace_children []
@@ -2727,6 +2740,8 @@ module For_testing = struct
       ; mutable on_import_file : (string -> unit) option
       ; mutable wants_image_payload : bool
       ; mutable image_source : image_source
+      ; mutable image_max_height : float option
+      ; mutable image_corner_radius : float option
       ; mutable list_row : string option
       ; mutable row_leading_button : rendered_row_leading_button option
       ; mutable row_actions : rendered_row_action list
@@ -2839,6 +2854,8 @@ module For_testing = struct
       ; on_import_file = None
       ; wants_image_payload = false
       ; image_source = System_image
+      ; image_max_height = None
+      ; image_corner_radius = None
       ; list_row = None
       ; row_leading_button = None
       ; row_actions = []
@@ -2863,6 +2880,12 @@ module For_testing = struct
     let set_image_color view color =
       mutate ();
       view.image_color <- color
+    ;;
+
+    let set_image_style view ~max_height ~corner_radius =
+      mutate ();
+      view.image_max_height <- max_height;
+      view.image_corner_radius <- corner_radius
     ;;
 
     let set_button_subtitle view subtitle =
@@ -3470,6 +3493,16 @@ module For_testing = struct
         | Image, Some color -> " image-color=" ^ text_color_name color
         | _ -> ""
       in
+      let image_style =
+        match view.kind, view.image_max_height, view.image_corner_radius with
+        | Image, None, None -> ""
+        | Image, max_height, corner_radius ->
+          " image-style=max-height:"
+          ^ option_text (Option.map max_height ~f:(fun value -> sprintf "%g" value))
+          ^ ":corner-radius:"
+          ^ option_text (Option.map corner_radius ~f:(fun value -> sprintf "%g" value))
+        | _ -> ""
+      in
       let modifiers =
         match view.modifiers with
         | [] -> ""
@@ -3953,6 +3986,7 @@ module For_testing = struct
        ^ payload
        ^ image_source
        ^ image_color
+       ^ image_style
        ^ panel
        ^ system_image
        ^ button_style

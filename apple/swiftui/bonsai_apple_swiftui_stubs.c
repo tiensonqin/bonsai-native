@@ -35,6 +35,10 @@ extern void bonsai_native_swiftui_set_button_style(void *node, int32_t style);
 extern void bonsai_native_swiftui_set_title_visible(void *node, bool is_visible);
 extern void bonsai_native_swiftui_set_image_source(void *node, int32_t source);
 extern void bonsai_native_swiftui_set_image_color(void *node, int32_t color);
+extern void bonsai_native_swiftui_set_image_style(
+  void *node,
+  double max_height,
+  double corner_radius);
 extern void bonsai_native_swiftui_set_text_attributes(
   void *node,
   int32_t style,
@@ -632,6 +636,19 @@ CAMLprim value bonsai_apple_swiftui_set_image_color(value node, value color)
 {
   CAMLparam2(node, color);
   bonsai_native_swiftui_set_image_color(pointer_val(node), Int_val(color));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_image_style(
+  value node,
+  value max_height,
+  value corner_radius)
+{
+  CAMLparam3(node, max_height, corner_radius);
+  bonsai_native_swiftui_set_image_style(
+    pointer_val(node),
+    Double_val(max_height),
+    Double_val(corner_radius));
   CAMLreturn(Val_unit);
 }
 
