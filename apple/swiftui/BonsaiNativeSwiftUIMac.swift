@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -8,6 +9,106 @@ public typealias BonsaiNativeHTTPCallback =
   @convention(c) (UnsafeMutableRawPointer?, Bool, UnsafePointer<CChar>?) -> Void
 public typealias BonsaiNativeLaunchCallback =
   @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> Bool
+
+@_cdecl("bonsai_native_swiftui_set_clipboard_text")
+public func bonsai_native_swiftui_set_clipboard_text(_ textPointer: UnsafePointer<CChar>?) {
+  guard let textPointer else { return }
+  NSPasteboard.general.clearContents()
+  NSPasteboard.general.setString(String(cString: textPointer), forType: .string)
+}
+
+@_cdecl("bonsai_native_swiftui_set_clipboard_image_file")
+public func bonsai_native_swiftui_set_clipboard_image_file(_ pathPointer: UnsafePointer<CChar>?) {
+  guard let pathPointer else { return }
+  guard let image = NSImage(contentsOfFile: String(cString: pathPointer)) else { return }
+  NSPasteboard.general.clearContents()
+  NSPasteboard.general.writeObjects([image])
+}
+
+private var bonsaiNativeAudioPlayer: AVAudioPlayer?
+private var bonsaiNativeAudioPath: String?
+private var bonsaiNativeAudioRecorder: AVAudioRecorder?
+private var bonsaiNativeAudioRecordingURL: URL?
+
+@_cdecl("bonsai_native_swiftui_toggle_audio_file_playback")
+public func bonsai_native_swiftui_toggle_audio_file_playback(_ pathPointer: UnsafePointer<CChar>?) {
+  guard let pathPointer else { return }
+  let path = String(cString: pathPointer)
+  if bonsaiNativeAudioPath == path, bonsaiNativeAudioPlayer?.isPlaying == true {
+    bonsaiNativeAudioPlayer?.pause()
+    bonsaiNativeAudioPlayer = nil
+    bonsaiNativeAudioPath = nil
+    return
+  }
+  bonsaiNativeAudioPlayer?.stop()
+  do {
+    let player = try AVAudioPlayer(contentsOf: URL(fileURLWithPath: path))
+    player.prepareToPlay()
+    player.play()
+    bonsaiNativeAudioPlayer = player
+    bonsaiNativeAudioPath = path
+  } catch {
+    bonsaiNativeAudioPlayer = nil
+    bonsaiNativeAudioPath = nil
+  }
+}
+
+@_cdecl("bonsai_native_swiftui_start_audio_recording")
+public func bonsai_native_swiftui_start_audio_recording() {
+  do {
+    let url = try bonsaiNativeNextAudioRecordingURL()
+    let settings: [String: Any] = [
+      AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+      AVSampleRateKey: 44_100,
+      AVNumberOfChannelsKey: 1,
+      AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+    ]
+    let recorder = try AVAudioRecorder(url: url, settings: settings)
+    recorder.prepareToRecord()
+    recorder.record()
+    bonsaiNativeAudioRecorder = recorder
+    bonsaiNativeAudioRecordingURL = url
+  } catch {
+    bonsaiNativeAudioRecorder = nil
+    bonsaiNativeAudioRecordingURL = nil
+  }
+}
+
+@_cdecl("bonsai_native_swiftui_stop_audio_recording_and_transcribe")
+public func bonsai_native_swiftui_stop_audio_recording_and_transcribe() -> UnsafeMutablePointer<CChar>? {
+  guard let recorder = bonsaiNativeAudioRecorder else {
+    return strdup("")
+  }
+  recorder.stop()
+  bonsaiNativeAudioRecorder = nil
+  let url = recorder.url
+  bonsaiNativeAudioRecordingURL = url
+  let byteSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
+  return strdup([
+    "Audio recording",
+    url.path,
+    url.lastPathComponent,
+    "audio/mp4",
+    String(byteSize)
+  ].joined(separator: "\t"))
+}
+
+private func bonsaiNativeNextAudioRecordingURL() throws -> URL {
+  let base = try FileManager.default.url(
+    for: .applicationSupportDirectory,
+    in: .userDomainMask,
+    appropriateFor: nil,
+    create: true
+  )
+  let directory = base
+    .appendingPathComponent("Lulala", isDirectory: true)
+    .appendingPathComponent("ChatAudioRecordings", isDirectory: true)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  let formatter = ISO8601DateFormatter()
+  formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+  let filename = "chat-audio-\(formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")).m4a"
+  return directory.appendingPathComponent(filename)
+}
 
 private enum NodeKind: Int32 {
   case label = 0
@@ -47,6 +148,47 @@ private enum NodeKind: Int32 {
   case colorPicker = 34
   case menu = 35
   case disclosureGroup = 36
+  case movableRows = 37
+}
+
+private func bonsaiNativeSemanticColor(_ color: Int32) -> Color? {
+  switch color {
+  case 0: return .primary
+  case 1: return .secondary
+  case 2: return Color.secondary.opacity(0.65)
+  case 3: return .red
+  case 4: return .green
+  case 5: return .orange
+  case 6: return .blue
+  case 7: return Color.accentColor
+  default: return nil
+  }
+}
+
+private extension View {
+  @ViewBuilder
+  func bonsaiLiquidGlassPanel(
+    cornerRadius: CGFloat,
+    isTransparent: Bool = false,
+    tint: Color? = nil
+  ) -> some View {
+    let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+    if #available(macOS 26.0, *) {
+      if let tint {
+        self.glassEffect(
+          isTransparent ? .clear.tint(tint) : .regular.tint(tint),
+          in: shape
+        )
+      } else {
+        self.glassEffect(isTransparent ? .clear : .regular, in: shape)
+      }
+    } else if let tint {
+      self.background(AnyShapeStyle(tint), in: shape)
+    } else {
+      self.background(isTransparent ? AnyShapeStyle(.clear) : AnyShapeStyle(.bar), in: shape)
+    }
+  }
 }
 
 private struct BonsaiNativeRowAction: Identifiable {
@@ -55,6 +197,7 @@ private struct BonsaiNativeRowAction: Identifiable {
   let systemImage: String?
   let style: Int32
   let eventId: Int32?
+  let startsSection: Bool
   let exportFilename: String?
   let exportContentType: String?
   let exportContent: String?
@@ -70,7 +213,11 @@ private struct BonsaiNativeTab: Identifiable {
 private struct BonsaiNativeSidebarAction: Identifiable {
   let id: String
   let title: String
+  let subtitle: String?
   let systemImage: String?
+  let avatarImage: String?
+  let avatarInitial: String?
+  let chrome: Int32
   let eventId: Int32?
   var menuActions: [BonsaiNativeRowAction]
 }
@@ -110,6 +257,7 @@ private struct BonsaiNativeToolbarItem: Identifiable {
   let isTitleVisible: Bool
   let eventId: Int32?
   let isEnabled: Bool
+  let shareURL: String?
   var menuActions: [BonsaiNativeRowAction]
 }
 
@@ -120,6 +268,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var text = ""
   @Published var systemImage: String?
   @Published var buttonSubtitle: String?
+  @Published var buttonStyle: Int32 = 0
   @Published var isTitleVisible = true
   @Published var textStyle: Int32 = 5
   @Published var textWeight: Int32 = 0
@@ -130,6 +279,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var progressValue: Double = 0
   @Published var isEnabled = true
   @Published var imageSource: Int32 = 0
+  @Published var imageColor: Int32 = -1
   @Published var placeholder: String?
   @Published var spacing: CGFloat?
   @Published var children: [BonsaiNativeNode] = []
@@ -140,6 +290,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var changeEventId: Int32?
   @Published var isSearchable = false
   @Published var searchText = ""
+  @Published var searchPrompt: String?
   @Published var searchEventId: Int32?
   @Published var sheetContent: BonsaiNativeNode?
   @Published var bottomSafeAreaInsetContent: BonsaiNativeNode?
@@ -166,6 +317,12 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var toolbarItems: [BonsaiNativeToolbarItem] = []
   @Published var padding: EdgeInsets?
   @Published var regularMaterialPanelCornerRadius: CGFloat?
+  @Published var secondaryFillPanelCornerRadius: CGFloat?
+  @Published var secondaryFillPanelOpacity: Double = 0.12
+  @Published var liquidGlassPanelCornerRadius: CGFloat?
+  @Published var liquidGlassPanelIsTransparent = false
+  @Published var liquidGlassPanelTintColor: Int32 = -1
+  @Published var liquidGlassPanelTintOpacity: Double = 0
   @Published var frameWidth: CGFloat?
   @Published var frameHeight: CGFloat?
   @Published var tabs: [BonsaiNativeTab] = []
@@ -175,6 +332,8 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var sidebarCompactTopBarVisible = true
   @Published var sidebarHeaderAction: BonsaiNativeSidebarAction?
   @Published var sidebarActions: [BonsaiNativeSidebarAction] = []
+  @Published var sidebarHistoryTitle: String?
+  @Published var sidebarHistoryActions: [BonsaiNativeSidebarAction] = []
   @Published var sidebarBottomSearchPlaceholder: String?
   @Published var sidebarBottomSearchText = ""
   @Published var sidebarBottomSearchEventId: Int32?
@@ -193,8 +352,10 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var rowLeadingEventId: Int32?
   @Published var rowActions: [BonsaiNativeRowAction] = []
   @Published var rowMenuActions: [BonsaiNativeRowAction] = []
+  @Published var contextMenuActions: [BonsaiNativeRowAction] = []
   @Published var sectionTitle = ""
   @Published var pickerSelected = ""
+  @Published var pickerStyle: Int32 = 0
   @Published var pickerEventId: Int32?
   @Published var pickerOptions: [BonsaiNativePickerOption] = []
   @Published var sliderValue: Double = 0
@@ -266,7 +427,12 @@ private struct BonsaiNativeImageView: View {
         .resizable()
         .scaledToFit()
     } else {
-      Image(systemName: node.text)
+      let image = Image(systemName: node.text)
+      if let color = bonsaiNativeSemanticColor(node.imageColor) {
+        image.foregroundStyle(color)
+      } else {
+        image
+      }
     }
   }
 }
@@ -357,38 +523,57 @@ private struct BonsaiNativeNodeView: View {
         .fontWeight(weight)
         .foregroundStyle(color)
     case .button:
-      Button {
-        model.sendClick(node.clickEventId)
-      } label: {
-        if let subtitle = node.buttonSubtitle {
-          VStack(spacing: 4) {
-            if let systemImage = node.systemImage {
-              Label(node.text, systemImage: systemImage)
-            } else {
-              Text(node.text)
+      if node.children.isEmpty {
+        let button = Button {
+          model.sendClick(node.clickEventId)
+        } label: {
+          if let subtitle = node.buttonSubtitle {
+            VStack(spacing: 4) {
+              if let systemImage = node.systemImage {
+                Label(node.text, systemImage: systemImage)
+              } else {
+                Text(node.text)
+              }
+              Text(subtitle)
+                .font(.caption2)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .foregroundStyle(.secondary)
             }
-            Text(subtitle)
-              .font(.caption2)
-              .lineLimit(1)
-              .minimumScaleFactor(0.75)
-              .foregroundStyle(.secondary)
-          }
-          .frame(maxWidth: .infinity, minHeight: 58)
-        } else if let systemImage = node.systemImage {
-          if node.text.isEmpty || !node.isTitleVisible {
-            Image(systemName: systemImage)
-              .accessibilityLabel(node.text)
+            .frame(maxWidth: .infinity, minHeight: 58)
+          } else if let systemImage = node.systemImage {
+            if node.text.isEmpty || !node.isTitleVisible {
+              Image(systemName: systemImage)
+                .accessibilityLabel(node.text)
+            } else {
+              Label(node.text, systemImage: systemImage)
+            }
           } else {
-            Label(node.text, systemImage: systemImage)
+            Text(node.text)
           }
-        } else {
-          Text(node.text)
         }
+          .disabled(!node.isEnabled)
+
+        if node.buttonStyle == 1 {
+          button.buttonStyle(.borderedProminent)
+        } else if node.buttonStyle == 2 {
+          button.buttonStyle(.plain)
+        } else {
+          button.buttonStyle(.bordered)
+        }
+      } else {
+        Button {
+          model.sendClick(node.clickEventId)
+        } label: {
+          ForEach(node.children) { child in
+            BonsaiNativeNodeView(node: child, model: model)
+          }
+        }
+          .disabled(!node.isEnabled)
+          .buttonStyle(.plain)
       }
-        .disabled(!node.isEnabled)
-        .buttonStyle(.bordered)
     case .textField:
-      Group {
+      let textField = Group {
         if node.isTextFieldSecure {
           SecureField(
             node.placeholder ?? "",
@@ -413,8 +598,22 @@ private struct BonsaiNativeNodeView: View {
           )
         }
       }
-      .textFieldStyle(.roundedBorder)
       .onSubmit { model.sendClick(node.clickEventId) }
+
+      if node.textFieldStyle == 1 {
+        textField
+          .textFieldStyle(.plain)
+          .font(.system(size: 18, weight: .regular))
+          .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+          .padding(.horizontal, 16)
+          .bonsaiLiquidGlassPanel(cornerRadius: 26, isInteractive: true)
+      } else if node.textFieldStyle == 2 {
+        textField
+          .textFieldStyle(.plain)
+      } else {
+        textField
+          .textFieldStyle(.roundedBorder)
+      }
     case .toggle:
       Toggle(
         node.text,
@@ -455,6 +654,8 @@ private struct BonsaiNativeNodeView: View {
       ScrollView { childViews }
     case .list:
       listView
+    case .movableRows:
+      movableRowsView
     case .navigationStack:
       NavigationStack { childViews }
     case .navigationPathStack:
@@ -498,16 +699,31 @@ private struct BonsaiNativeNodeView: View {
       }
     case .sidebarSplit:
       NavigationSplitView {
-        List(node.tabs) { tab in
-          Button {
-            node.selectedTabId = tab.id
-            model.sendChange(node.tabSelectEventId, text: tab.id)
-          } label: {
-            Label(tab.title, systemImage: tab.systemImage ?? "circle")
+        List {
+          if node.sidebarActions.isEmpty && node.sidebarHistoryActions.isEmpty {
+            ForEach(node.tabs) { tab in
+              Button {
+                node.selectedTabId = tab.id
+                model.sendChange(node.tabSelectEventId, text: tab.id)
+              } label: {
+                Label(tab.title, systemImage: tab.systemImage ?? "circle")
+              }
+              .buttonStyle(.plain)
+            }
+          } else {
+            ForEach(node.sidebarActions) { action in
+              sidebarActionButton(action)
+            }
+            if !node.sidebarHistoryActions.isEmpty, let title = node.sidebarHistoryTitle {
+              Text(title)
+                .font(.headline)
+            }
+            ForEach(node.sidebarHistoryActions) { action in
+              sidebarActionButton(action, usesContextMenu: true)
+            }
           }
-          .buttonStyle(.plain)
         }
-        .navigationTitle("Todos")
+        .navigationTitle(node.sidebarTitle ?? "")
       } detail: {
         selectedTabDetail
       }
@@ -518,10 +734,20 @@ private struct BonsaiNativeNodeView: View {
     case .section:
       Section(node.sectionTitle) { childViews }
     case .picker:
-      Picker(node.text, selection: pickerSelection) {
-        ForEach(node.pickerOptions) { option in
-          Text(option.title).tag(option.id)
+      if node.pickerStyle == 1 {
+        Picker(node.text, selection: pickerSelection) {
+          ForEach(node.pickerOptions) { option in
+            Text(option.title).tag(option.id)
+          }
         }
+        .pickerStyle(.segmented)
+      } else {
+        Picker(node.text, selection: pickerSelection) {
+          ForEach(node.pickerOptions) { option in
+            Text(option.title).tag(option.id)
+          }
+        }
+        .pickerStyle(.menu)
       }
     case .slider:
       slider
@@ -565,7 +791,11 @@ private struct BonsaiNativeNodeView: View {
       Label(node.text, systemImage: "camera")
         .foregroundStyle(.secondary)
     case .customView:
-      Text(node.text)
+      if node.text == "congrats-effect" {
+        BonsaiNativeCongratsEffectView()
+      } else {
+        Text(node.text)
+      }
     }
   }
 
@@ -592,6 +822,17 @@ private struct BonsaiNativeNodeView: View {
     .refreshable {
       model.sendClick(node.listRefreshEventId)
     }
+  }
+
+  private var movableRowsView: some View {
+    ForEach(Array(node.children.enumerated()), id: \.element.id) { _, child in
+      BonsaiNativeNodeView(node: child, model: model)
+    }
+    .onMove { source, destination in
+      guard let fromIndex = source.first else { return }
+      model.sendChange(node.listMoveEventId, text: "\(fromIndex):\(destination)")
+    }
+    .environment(\.editMode, .constant(node.isListEditMode ? .active : .inactive))
   }
 
   private var navigationPathBinding: Binding<[String]> {
@@ -680,6 +921,90 @@ private struct BonsaiNativeNodeView: View {
           }
         }
       }
+    }
+  }
+
+  @ViewBuilder
+  private func sidebarActionButton(_ action: BonsaiNativeSidebarAction, usesContextMenu: Bool = false) -> some View {
+    if action.menuActions.isEmpty {
+      Button {
+        if let eventId = action.eventId {
+          model.sendClick(eventId)
+        }
+      } label: {
+        sidebarActionLabel(action)
+      }
+      .buttonStyle(.plain)
+    } else {
+      if usesContextMenu {
+        Button {
+          if let eventId = action.eventId {
+            model.sendClick(eventId)
+          }
+        } label: {
+          sidebarActionLabel(action)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+          sidebarActionMenuItems(action)
+        }
+      } else {
+        Menu {
+          sidebarActionMenuItems(action)
+        } label: {
+          sidebarActionLabel(action)
+        }
+        .buttonStyle(.plain)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func sidebarActionMenuItems(_ action: BonsaiNativeSidebarAction) -> some View {
+    ForEach(action.menuActions) { menuAction in
+      Button(role: menuAction.style == 1 ? .destructive : nil) {
+        if let eventId = menuAction.eventId {
+          model.sendClick(eventId)
+        }
+      } label: {
+        if let image = menuAction.systemImage {
+          Label(menuAction.title, systemImage: image)
+        } else {
+          Text(menuAction.title)
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func sidebarActionLabel(_ action: BonsaiNativeSidebarAction) -> some View {
+    if let subtitle = action.subtitle, !subtitle.isEmpty {
+      if let systemImage = action.systemImage {
+        Label {
+          sidebarActionText(title: action.title, subtitle: subtitle)
+        } icon: {
+          Image(systemName: systemImage)
+        }
+      } else {
+        sidebarActionText(title: action.title, subtitle: subtitle)
+      }
+    } else {
+      if let systemImage = action.systemImage {
+        Label(action.title, systemImage: systemImage)
+      } else {
+        Text(action.title)
+      }
+    }
+  }
+
+  private func sidebarActionText(title: String, subtitle: String) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(title)
+        .lineLimit(1)
+      Text(subtitle)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
     }
   }
 
@@ -901,24 +1226,26 @@ private struct BonsaiNativeNodeView: View {
   }
 
   private var color: Color {
-    switch node.textColor {
-    case 1: return .secondary
-    case 2: return .secondary
-    default: return .primary
-    }
+    bonsaiNativeSemanticColor(node.textColor) ?? .primary
   }
 
   @ViewBuilder
   private func applyModifiers<Content: View>(to content: Content) -> some View {
     let base = bottomSafeAreaInset(
       tapAction(
-        regularMaterialPanel(
-          content
-          .padding(node.padding ?? EdgeInsets())
-          .frame(
-            width: node.frameWidth,
-            height: node.frameHeight,
-            alignment: .topLeading
+        contextMenu(
+          regularMaterialPanel(
+            secondaryFillPanel(
+              liquidGlassPanel(
+                content
+                .padding(node.padding ?? EdgeInsets())
+                .frame(
+                  width: node.frameWidth,
+                  height: node.frameHeight,
+                  alignment: .topLeading
+                )
+              )
+            )
           )
         )
       )
@@ -1003,23 +1330,30 @@ private struct BonsaiNativeNodeView: View {
       }
 
     if node.isSearchable {
-      base
-        .searchable(
-          text: Binding(
-            get: { node.searchText },
-            set: { value in
-              node.searchText = value
-              model.sendChange(node.searchEventId, text: value)
+      let text = Binding(
+        get: { node.searchText },
+        set: { value in
+          node.searchText = value
+          model.sendChange(node.searchEventId, text: value)
+        }
+      )
+      if let prompt = node.searchPrompt {
+        base
+          .searchable(text: text, placement: .toolbar, prompt: Text(prompt))
+          .sheet(isPresented: sheetBinding) {
+            if let sheetContent = node.sheetContent {
+              BonsaiNativeNodeView(node: sheetContent, model: model)
             }
-          ),
-          placement: .toolbar,
-          prompt: "Search tasks"
-        )
-        .sheet(isPresented: sheetBinding) {
+          }
+      } else {
+        base
+          .searchable(text: text, placement: .toolbar)
+          .sheet(isPresented: sheetBinding) {
           if let sheetContent = node.sheetContent {
             BonsaiNativeNodeView(node: sheetContent, model: model)
           }
         }
+      }
     } else {
       base
         .sheet(isPresented: sheetBinding) {
@@ -1054,6 +1388,56 @@ private struct BonsaiNativeNodeView: View {
   }
 
   @ViewBuilder
+  private func secondaryFillPanel<PanelContent: View>(_ content: PanelContent) -> some View {
+    if let cornerRadius = node.secondaryFillPanelCornerRadius {
+      content.background(
+        Color.secondary.opacity(node.secondaryFillPanelOpacity),
+        in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+      )
+    } else {
+      content
+    }
+  }
+
+  @ViewBuilder
+  private func liquidGlassPanel<PanelContent: View>(_ content: PanelContent) -> some View {
+    if let cornerRadius = node.liquidGlassPanelCornerRadius {
+      let tint = bonsaiNativeSemanticColor(node.liquidGlassPanelTintColor)?
+        .opacity(node.liquidGlassPanelTintOpacity)
+      content.bonsaiLiquidGlassPanel(
+        cornerRadius: cornerRadius,
+        isTransparent: node.liquidGlassPanelIsTransparent,
+        tint: tint
+      )
+    } else {
+      content
+    }
+  }
+
+  @ViewBuilder
+  private func contextMenu<MenuContent: View>(_ content: MenuContent) -> some View {
+    if node.contextMenuActions.isEmpty {
+      content
+    } else {
+      content.contextMenu {
+        ForEach(node.contextMenuActions) { action in
+          Button(role: action.style == 1 ? .destructive : nil) {
+            if let eventId = action.eventId {
+              model.sendClick(eventId)
+            }
+          } label: {
+            if let systemImage = action.systemImage {
+              Label(action.title, systemImage: systemImage)
+            } else {
+              Text(action.title)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
   private func tapAction<TapContent: View>(_ content: TapContent) -> some View {
     if let tapEventId = node.tapEventId {
       content
@@ -1076,6 +1460,68 @@ private struct BonsaiNativeNodeView: View {
         }
       }
     )
+  }
+}
+
+private struct BonsaiNativeCongratsEffectView: View {
+  var body: some View {
+    ZStack {
+      ForEach(0..<28, id: \.self) { index in
+        BonsaiNativeCongratsParticle(index: index)
+      }
+      VStack(spacing: 8) {
+        Image(systemName: "sparkles")
+          .font(.system(size: 44, weight: .semibold))
+        Text("Deck complete")
+          .font(.title2.weight(.semibold))
+      }
+      .padding(.horizontal, 28)
+      .padding(.vertical, 22)
+      .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+      .shadow(radius: 18)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+}
+
+private struct BonsaiNativeCongratsParticle: View {
+  let index: Int
+  @State private var isExpanded = false
+
+  var body: some View {
+    Circle()
+      .fill(color)
+      .frame(width: size, height: size)
+      .offset(isExpanded ? endOffset : .zero)
+      .opacity(isExpanded ? 0 : 1)
+      .scaleEffect(isExpanded ? 0.6 : 1.2)
+      .onAppear {
+        withAnimation(.easeOut(duration: duration).delay(delay)) {
+          isExpanded = true
+        }
+      }
+  }
+
+  private var color: Color {
+    [Color.blue, .green, .orange, .pink, .purple][index % 5]
+  }
+
+  private var size: CGFloat {
+    CGFloat(7 + (index % 4) * 3)
+  }
+
+  private var delay: Double {
+    Double(index % 6) * 0.025
+  }
+
+  private var duration: Double {
+    0.85 + Double(index % 5) * 0.08
+  }
+
+  private var endOffset: CGSize {
+    let angle = Double(index) / 28.0 * Double.pi * 2.0
+    let radius = CGFloat(92 + (index % 6) * 18)
+    return CGSize(width: cos(angle) * radius, height: sin(angle) * radius)
   }
 }
 
@@ -1123,6 +1569,11 @@ public func bonsai_native_swiftui_set_button_subtitle(_ pointer: UnsafeMutableRa
   nativeNode(from: pointer)?.buttonSubtitle = subtitlePointer.map(String.init(cString:))
 }
 
+@_cdecl("bonsai_native_swiftui_set_button_style")
+public func bonsai_native_swiftui_set_button_style(_ pointer: UnsafeMutableRawPointer?, _ style: Int32) {
+  nativeNode(from: pointer)?.buttonStyle = style
+}
+
 @_cdecl("bonsai_native_swiftui_set_title_visible")
 public func bonsai_native_swiftui_set_title_visible(_ pointer: UnsafeMutableRawPointer?, _ isVisible: Bool) {
   nativeNode(from: pointer)?.isTitleVisible = isVisible
@@ -1131,6 +1582,11 @@ public func bonsai_native_swiftui_set_title_visible(_ pointer: UnsafeMutableRawP
 @_cdecl("bonsai_native_swiftui_set_image_source")
 public func bonsai_native_swiftui_set_image_source(_ pointer: UnsafeMutableRawPointer?, _ source: Int32) {
   nativeNode(from: pointer)?.imageSource = source
+}
+
+@_cdecl("bonsai_native_swiftui_set_image_color")
+public func bonsai_native_swiftui_set_image_color(_ pointer: UnsafeMutableRawPointer?, _ color: Int32) {
+  nativeNode(from: pointer)?.imageColor = color
 }
 
 @_cdecl("bonsai_native_swiftui_set_text_attributes")
@@ -1315,6 +1771,7 @@ public func bonsai_native_swiftui_append_list_row_action(
       systemImage: systemImagePointer.map(String.init(cString:)),
       style: style,
       eventId: eventId < 0 ? nil : eventId,
+      startsSection: false,
       exportFilename: nil,
       exportContentType: nil,
       exportContent: nil
@@ -1342,6 +1799,35 @@ public func bonsai_native_swiftui_append_list_row_menu_action(
       systemImage: systemImagePointer.map(String.init(cString:)),
       style: style,
       eventId: eventId < 0 ? nil : eventId,
+      startsSection: false,
+      exportFilename: nil,
+      exportContentType: nil,
+      exportContent: nil
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_clear_context_menu_actions")
+public func bonsai_native_swiftui_clear_context_menu_actions(_ pointer: UnsafeMutableRawPointer?) {
+  nativeNode(from: pointer)?.contextMenuActions = []
+}
+
+@_cdecl("bonsai_native_swiftui_append_context_menu_action")
+public func bonsai_native_swiftui_append_context_menu_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ style: Int32,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer), let titlePointer else { return }
+  node.contextMenuActions.append(
+    BonsaiNativeRowAction(
+      title: String(cString: titlePointer),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      style: style,
+      eventId: eventId < 0 ? nil : eventId,
+      startsSection: false,
       exportFilename: nil,
       exportContentType: nil,
       exportContent: nil
@@ -1350,11 +1836,17 @@ public func bonsai_native_swiftui_append_list_row_menu_action(
 }
 
 @_cdecl("bonsai_native_swiftui_set_searchable")
-public func bonsai_native_swiftui_set_searchable(_ pointer: UnsafeMutableRawPointer?, _ eventId: Int32, _ textPointer: UnsafePointer<CChar>?) {
+public func bonsai_native_swiftui_set_searchable(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ eventId: Int32,
+  _ textPointer: UnsafePointer<CChar>?,
+  _ promptPointer: UnsafePointer<CChar>?
+) {
   guard let node = nativeNode(from: pointer) else { return }
   node.isSearchable = eventId >= 0
   node.searchEventId = eventId < 0 ? nil : eventId
   node.searchText = textPointer.map(String.init(cString:)) ?? ""
+  node.searchPrompt = promptPointer.map(String.init(cString:))
 }
 
 @_cdecl("bonsai_native_swiftui_set_sheet")
@@ -1507,6 +1999,7 @@ public func bonsai_native_swiftui_append_toolbar_item(
   _ systemImagePointer: UnsafePointer<CChar>?,
   _ isTitleVisible: Bool,
   _ isEnabled: Bool,
+  _ shareURLPointer: UnsafePointer<CChar>?,
   _ eventId: Int32
 ) {
   guard let node = nativeNode(from: pointer), let idPointer, let titlePointer else { return }
@@ -1518,6 +2011,7 @@ public func bonsai_native_swiftui_append_toolbar_item(
       isTitleVisible: isTitleVisible,
       eventId: eventId < 0 ? nil : eventId,
       isEnabled: isEnabled,
+      shareURL: shareURLPointer.map(String.init(cString:)),
       menuActions: []
     )
   )
@@ -1531,6 +2025,7 @@ public func bonsai_native_swiftui_append_toolbar_menu_action(
   _ systemImagePointer: UnsafePointer<CChar>?,
   _ style: Int32,
   _ eventId: Int32,
+  _ startsSection: Bool,
   _ exportFilenamePointer: UnsafePointer<CChar>?,
   _ exportContentTypePointer: UnsafePointer<CChar>?,
   _ exportContentPointer: UnsafePointer<CChar>?
@@ -1544,6 +2039,7 @@ public func bonsai_native_swiftui_append_toolbar_menu_action(
       systemImage: systemImagePointer.map(String.init(cString:)),
       style: style,
       eventId: eventId < 0 ? nil : eventId,
+      startsSection: startsSection,
       exportFilename: exportFilenamePointer.map(String.init(cString:)),
       exportContentType: exportContentTypePointer.map(String.init(cString:)),
       exportContent: exportContentPointer.map(String.init(cString:))
@@ -1570,6 +2066,32 @@ public func bonsai_native_swiftui_set_frame(_ pointer: UnsafeMutableRawPointer?,
 public func bonsai_native_swiftui_set_regular_material_panel(_ pointer: UnsafeMutableRawPointer?, _ cornerRadius: Double) {
   nativeNode(from: pointer)?.regularMaterialPanelCornerRadius =
     cornerRadius < 0 ? nil : CGFloat(cornerRadius)
+}
+
+@_cdecl("bonsai_native_swiftui_set_secondary_fill_panel")
+public func bonsai_native_swiftui_set_secondary_fill_panel(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ cornerRadius: Double,
+  _ opacity: Double
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.secondaryFillPanelCornerRadius = cornerRadius < 0 ? nil : CGFloat(cornerRadius)
+  node.secondaryFillPanelOpacity = opacity
+}
+
+@_cdecl("bonsai_native_swiftui_set_liquid_glass_panel")
+public func bonsai_native_swiftui_set_liquid_glass_panel(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ cornerRadius: Double,
+  _ isTransparent: Bool,
+  _ tintColor: Int32,
+  _ tintOpacity: Double
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.liquidGlassPanelCornerRadius = cornerRadius < 0 ? nil : CGFloat(cornerRadius)
+  node.liquidGlassPanelIsTransparent = isTransparent
+  node.liquidGlassPanelTintColor = tintColor
+  node.liquidGlassPanelTintOpacity = tintOpacity
 }
 
 @_cdecl("bonsai_native_swiftui_clear_tabs")
@@ -1613,6 +2135,8 @@ public func bonsai_native_swiftui_clear_sidebar_shell(
   node.sidebarCompactTopBarVisible = compactTopBarVisible
   node.sidebarHeaderAction = nil
   node.sidebarActions = []
+  node.sidebarHistoryTitle = nil
+  node.sidebarHistoryActions = []
   node.sidebarBottomSearchPlaceholder = bottomSearchPlaceholderPointer.map(String.init(cString:))
   node.sidebarBottomSearchText = bottomSearchTextPointer.map(String.init(cString:)) ?? ""
   node.sidebarBottomSearchEventId = bottomSearchEventId >= 0 ? bottomSearchEventId : nil
@@ -1625,6 +2149,8 @@ public func bonsai_native_swiftui_set_sidebar_header_action(
   _ headerActionIdPointer: UnsafePointer<CChar>?,
   _ headerActionTitlePointer: UnsafePointer<CChar>?,
   _ headerActionSystemImagePointer: UnsafePointer<CChar>?,
+  _ headerActionAvatarImagePointer: UnsafePointer<CChar>?,
+  _ headerActionAvatarInitialPointer: UnsafePointer<CChar>?,
   _ headerActionEventId: Int32
 ) {
   guard let node = nativeNode(from: pointer) else { return }
@@ -1632,7 +2158,11 @@ public func bonsai_native_swiftui_set_sidebar_header_action(
     node.sidebarHeaderAction = BonsaiNativeSidebarAction(
       id: String(cString: headerActionIdPointer),
       title: String(cString: headerActionTitlePointer),
+      subtitle: nil,
       systemImage: headerActionSystemImagePointer.map(String.init(cString:)),
+      avatarImage: headerActionAvatarImagePointer.map(String.init(cString:)),
+      avatarInitial: headerActionAvatarInitialPointer.map(String.init(cString:)),
+      chrome: 0,
       eventId: headerActionEventId < 0 ? nil : headerActionEventId,
       menuActions: []
     )
@@ -1646,6 +2176,7 @@ public func bonsai_native_swiftui_append_sidebar_action(
   _ pointer: UnsafeMutableRawPointer?,
   _ idPointer: UnsafePointer<CChar>?,
   _ titlePointer: UnsafePointer<CChar>?,
+  _ subtitlePointer: UnsafePointer<CChar>?,
   _ systemImagePointer: UnsafePointer<CChar>?,
   _ eventId: Int32
 ) {
@@ -1654,7 +2185,11 @@ public func bonsai_native_swiftui_append_sidebar_action(
     BonsaiNativeSidebarAction(
       id: String(cString: idPointer),
       title: String(cString: titlePointer),
+      subtitle: subtitlePointer.map(String.init(cString:)),
       systemImage: systemImagePointer.map(String.init(cString:)),
+      avatarImage: nil,
+      avatarInitial: nil,
+      chrome: 0,
       eventId: eventId < 0 ? nil : eventId,
       menuActions: []
     )
@@ -1679,6 +2214,67 @@ public func bonsai_native_swiftui_append_sidebar_action_menu_action(
       systemImage: systemImagePointer.map(String.init(cString:)),
       style: style,
       eventId: eventId < 0 ? nil : eventId,
+      startsSection: false,
+      exportFilename: nil,
+      exportContentType: nil,
+      exportContent: nil
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_set_sidebar_history_title")
+public func bonsai_native_swiftui_set_sidebar_history_title(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ titlePointer: UnsafePointer<CChar>?
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.sidebarHistoryTitle = titlePointer.map(String.init(cString:))
+}
+
+@_cdecl("bonsai_native_swiftui_append_sidebar_history_action")
+public func bonsai_native_swiftui_append_sidebar_history_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ subtitlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer), let idPointer, let titlePointer else { return }
+  node.sidebarHistoryActions.append(
+    BonsaiNativeSidebarAction(
+      id: String(cString: idPointer),
+      title: String(cString: titlePointer),
+      subtitle: subtitlePointer.map(String.init(cString:)),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      avatarImage: nil,
+      avatarInitial: nil,
+      chrome: 0,
+      eventId: eventId < 0 ? nil : eventId,
+      menuActions: []
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_append_sidebar_history_action_menu_action")
+public func bonsai_native_swiftui_append_sidebar_history_action_menu_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ style: Int32,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer),
+        let titlePointer,
+        let lastIndex = node.sidebarHistoryActions.indices.last
+  else { return }
+  node.sidebarHistoryActions[lastIndex].menuActions.append(
+    BonsaiNativeRowAction(
+      title: String(cString: titlePointer),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      style: style,
+      eventId: eventId < 0 ? nil : eventId,
+      startsSection: false,
       exportFilename: nil,
       exportContentType: nil,
       exportContent: nil
@@ -1692,7 +2288,8 @@ public func bonsai_native_swiftui_set_sidebar_bottom_action(
   _ idPointer: UnsafePointer<CChar>?,
   _ titlePointer: UnsafePointer<CChar>?,
   _ systemImagePointer: UnsafePointer<CChar>?,
-  _ eventId: Int32
+  _ eventId: Int32,
+  _ chrome: Int32
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   guard let idPointer, let titlePointer else {
@@ -1702,7 +2299,11 @@ public func bonsai_native_swiftui_set_sidebar_bottom_action(
   node.sidebarBottomAction = BonsaiNativeSidebarAction(
     id: String(cString: idPointer),
     title: String(cString: titlePointer),
+    subtitle: nil,
     systemImage: systemImagePointer.map(String.init(cString:)),
+    avatarImage: nil,
+    avatarInitial: nil,
+    chrome: chrome,
     eventId: eventId < 0 ? nil : eventId,
     menuActions: []
   )
@@ -1718,11 +2319,13 @@ public func bonsai_native_swiftui_clear_picker(
   _ pointer: UnsafeMutableRawPointer?,
   _ titlePointer: UnsafePointer<CChar>?,
   _ selectedPointer: UnsafePointer<CChar>?,
+  _ style: Int32,
   _ eventId: Int32
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.text = titlePointer.map(String.init(cString:)) ?? ""
   node.pickerSelected = selectedPointer.map(String.init(cString:)) ?? ""
+  node.pickerStyle = style
   node.pickerEventId = eventId < 0 ? nil : eventId
   node.pickerOptions = []
 }

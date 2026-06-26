@@ -26,15 +26,15 @@ let () =
           [ "today"; "tasks"; "settings" ]
           ~key:(fun value -> value)
           ~row:(fun title -> text title)
-        |> searchable ~text:"ta" ~on_change:(fun _ -> Effect.ignore)
+        |> searchable ~text:"ta" ~on_change:(fun _ -> Action.ignore)
         |> toolbar
-             [ toolbar_item ~id:"add" ~title:"Add" ~on_click:Effect.ignore
-             ; toolbar_item ~id:"done" ~title:"Done" ~on_click:Effect.ignore
+             [ toolbar_item ~id:"add" ~title:"Add" ~on_click:Action.ignore
+             ; toolbar_item ~id:"done" ~title:"Done" ~on_click:Action.ignore
              ]
         |> sheet
              ~is_presented:true
              ~content:(vstack [ text "Details"; image "star" ])
-             ~on_dismiss:Effect.ignore
+             ~on_dismiss:Action.ignore
       ; custom_view ~key:"native-map" ~kind:"map" ()
       ]
   in

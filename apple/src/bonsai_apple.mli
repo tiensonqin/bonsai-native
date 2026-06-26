@@ -1,10 +1,32 @@
-module Effect : sig
+module Action : sig
   type 'a t = unit -> 'a
 
   val ignore : unit t
   val of_thunk : (unit -> 'a) -> 'a t
   val many : unit t list -> unit t
 end
+
+val copy_text_to_clipboard : string -> unit Action.t
+val copy_image_file_to_clipboard : string -> unit Action.t
+val toggle_audio_file_playback : string -> unit Action.t
+
+type audio_recording_result =
+  { transcript : string
+  ; local_path : string
+  ; filename : string
+  ; content_type : string
+  ; byte_size : int
+  }
+
+val start_audio_recording : unit Action.t
+val stop_audio_recording_and_transcribe : audio_recording_result Action.t
+val set_clipboard_text_handler : (string -> unit) -> unit
+val set_clipboard_image_file_handler : (string -> unit) -> unit
+val set_toggle_audio_file_playback_handler : (string -> unit) -> unit
+val set_audio_recording_handlers
+  :  start:(unit -> unit)
+  -> stop_and_transcribe:(unit -> audio_recording_result)
+  -> unit
 
 type graph = Bonsai_native.graph
 
@@ -13,7 +35,7 @@ val state
   -> graph
   -> key:string
   -> 'a
-  -> 'a * ('a -> unit Effect.t)
+  -> 'a * ('a -> unit Action.t)
 
 val scope : graph -> key:string -> (graph -> 'a) -> 'a
 
@@ -43,7 +65,7 @@ type alert_action =
   ; title : string
   ; role : alert_action_role
   ; is_enabled : bool
-  ; on_click : unit Effect.t
+  ; on_click : unit Action.t
   }
 
 type presentation_detent =
@@ -58,7 +80,7 @@ type menu_action =
   ; system_image : string option
   ; style : row_action_style
   ; is_enabled : bool
-  ; on_click : unit Effect.t
+  ; on_click : unit Action.t
   }
 
 type file_export =
@@ -81,8 +103,9 @@ type toolbar_menu_action =
   { title : string
   ; system_image : string option
   ; style : row_action_style
-  ; on_click : unit Effect.t
+  ; on_click : unit Action.t
   ; file_export : file_export option
+  ; starts_section : bool
   }
 
 type toolbar_item =
@@ -91,7 +114,8 @@ type toolbar_item =
   ; system_image : string option
   ; is_title_visible : bool
   ; is_enabled : bool
-  ; on_click : unit Effect.t
+  ; on_click : unit Action.t
+  ; share_url : string option
   ; menu_actions : toolbar_menu_action list
   }
 
@@ -110,6 +134,7 @@ type text_style =
 
 type text_weight =
   | Regular
+  | Medium
   | Semibold
   | Bold
 
@@ -117,10 +142,21 @@ type text_color =
   | Primary
   | Secondary
   | Tertiary
+  | Red
+  | Green
+  | Orange
+  | Blue
+  | Accent
 
 type text_field_style =
   | Rounded_border
   | Pill
+  | Plain_text
+
+type button_style =
+  | Bordered
+  | Bordered_prominent
+  | Plain
 
 type text_attributes =
   { style : text_style
@@ -133,14 +169,14 @@ type row_leading_button =
   ; selected_system_image : string option
   ; selected : bool
   ; accessibility_label : string
-  ; on_click : unit Effect.t
+  ; on_click : unit Action.t
   }
 
 type row_action =
   { title : string
   ; system_image : string option
   ; style : row_action_style
-  ; on_click : unit Effect.t
+  ; on_click : unit Action.t
   }
 
 type list_row_content_style =
@@ -156,6 +192,10 @@ type picker_option =
   { id : string
   ; title : string
   }
+
+type picker_style =
+  | Menu
+  | Segmented
 
 type image_payload =
   { id : string
@@ -177,7 +217,7 @@ type list_row =
   ; content_style : list_row_content_style
   ; accessory : list_row_accessory
   ; title_strikethrough : bool
-  ; on_click : unit Effect.t option
+  ; on_click : unit Action.t option
   ; leading_button : row_leading_button option
   ; swipe_actions : row_action list
   ; menu_actions : row_action list
@@ -187,6 +227,11 @@ type tab_role = Search
 
 type tab
 type sidebar_action
+
+type sidebar_action_chrome =
+  | Default_chrome
+  | Prominent_capsule
+  | Liquid_icon
 
 type rendered_tab =
   { id : string
@@ -206,29 +251,34 @@ val text
 
 val button
   :  ?is_enabled:bool
+  -> ?style:button_style
   -> ?system_image:string
   -> ?subtitle:string
   -> ?is_title_visible:bool
   -> string
-  -> on_click:unit Effect.t
+  -> on_click:unit Action.t
   -> node
+
+val button_label : ?is_enabled:bool -> on_click:unit Action.t -> node -> node
+
 val text_field
   :  ?placeholder:string
   -> ?style:text_field_style
   -> ?is_secure:bool
-  -> ?on_submit:unit Effect.t
+  -> ?on_submit:unit Action.t
   -> text:string
-  -> on_change:(string -> unit Effect.t)
+  -> on_change:(string -> unit Action.t)
   -> unit
   -> node
-val toggle : string -> is_on:bool -> on_change:(bool -> unit Effect.t) -> node
+val toggle : string -> is_on:bool -> on_change:(bool -> unit Action.t) -> node
 val text_editor
   :  ?placeholder:string
   -> text:string
-  -> on_change:(string -> unit Effect.t)
+  -> on_change:(string -> unit Action.t)
   -> unit
   -> node
 val progress_view : value:float -> node
+val congrats_effect : unit -> node
 
 val vstack : ?spacing:float -> node list -> node
 val hstack : ?spacing:float -> node list -> node
@@ -238,9 +288,16 @@ val divider : unit -> node
 val form : node list -> node
 val scroll_view : node -> node
 val list
-  :  ?on_refresh:unit Effect.t
-  -> ?on_delete:(int -> unit Effect.t)
-  -> ?on_move:(from_index:int -> to_index:int -> unit Effect.t)
+  :  ?on_refresh:unit Action.t
+  -> ?on_delete:(int -> unit Action.t)
+  -> ?on_move:(from_index:int -> to_index:int -> unit Action.t)
+  -> ?edit_mode:bool
+  -> 'a list
+  -> key:('a -> string)
+  -> row:('a -> node)
+  -> node
+val movable_rows
+  :  ?on_move:(from_index:int -> to_index:int -> unit Action.t)
   -> ?edit_mode:bool
   -> 'a list
   -> key:('a -> string)
@@ -249,10 +306,17 @@ val list
 val section : key:string -> ?title:string -> node list -> node
 val section_key : node -> string
 val picker_option : id:string -> title:string -> picker_option
+val row_action
+  :  ?system_image:string
+  -> ?style:row_action_style
+  -> string
+  -> on_click:unit Action.t
+  -> row_action
 val picker
-  :  title:string
+  :  ?style:picker_style
+  -> title:string
   -> selected:string
-  -> on_select:(string -> unit Effect.t)
+  -> on_select:(string -> unit Action.t)
   -> picker_option list
   -> node
 val slider
@@ -260,7 +324,7 @@ val slider
   -> value:float
   -> min:float
   -> max:float
-  -> on_change:(float -> unit Effect.t)
+  -> on_change:(float -> unit Action.t)
   -> node
 val stepper
   :  title:string
@@ -268,17 +332,17 @@ val stepper
   -> min:int
   -> max:int
   -> step:int
-  -> on_change:(int -> unit Effect.t)
+  -> on_change:(int -> unit Action.t)
   -> node
 val date_picker
   :  title:string
   -> selected:string
-  -> on_select:(string -> unit Effect.t)
+  -> on_select:(string -> unit Action.t)
   -> node
 val color_picker
   :  title:string
   -> selected:string
-  -> on_select:(string -> unit Effect.t)
+  -> on_select:(string -> unit Action.t)
   -> node
 val menu_action
   :  id:string
@@ -286,38 +350,42 @@ val menu_action
   -> ?system_image:string
   -> ?style:row_action_style
   -> ?is_enabled:bool
-  -> on_click:unit Effect.t
+  -> on_click:unit Action.t
   -> unit
   -> menu_action
 val menu : title:string -> ?system_image:string -> menu_action list -> node
 val disclosure_group
   :  title:string
   -> is_expanded:bool
-  -> on_change:(bool -> unit Effect.t)
+  -> on_change:(bool -> unit Action.t)
   -> node list
   -> node
 val navigation_stack : node list -> node
 val navigation_path_stack
   :  path:string list
-  -> on_path_change:(string list -> unit Effect.t)
+  -> on_path_change:(string list -> unit Action.t)
   -> root:node
   -> destinations:(string * node) list
   -> node
 val navigation_link
-  :  ?on_activate:unit Effect.t
-  -> ?on_deactivate:unit Effect.t
+  :  ?on_activate:unit Action.t
+  -> ?on_deactivate:unit Action.t
   -> destination:node
   -> node
   -> node
 val navigation_split : sidebar:node -> content:node -> detail:node -> node
 val adaptive_layout : compact:node -> regular:node -> node
 val tab : id:string -> title:string -> ?system_image:string -> ?role:tab_role -> node -> tab
-val tab_view : selected:string -> on_select:(string -> unit Effect.t) -> tab list -> node
+val tab_view : selected:string -> on_select:(string -> unit Action.t) -> tab list -> node
 val sidebar_action
   :  id:string
   -> title:string
+  -> ?subtitle:string
   -> ?system_image:string
-  -> on_click:unit Effect.t
+  -> ?avatar_image:string
+  -> ?avatar_initial:string
+  -> ?chrome:sidebar_action_chrome
+  -> on_click:unit Action.t
   -> ?menu_actions:row_action list
   -> unit
   -> sidebar_action
@@ -326,15 +394,17 @@ val sidebar_split
   -> ?compact_top_bar_visible:bool
   -> ?header_action:sidebar_action
   -> ?actions:sidebar_action list
+  -> ?history_title:string
+  -> ?history_actions:sidebar_action list
   -> ?bottom_search_placeholder:string
   -> ?bottom_search_text:string
-  -> ?bottom_search_on_change:(string -> unit Effect.t)
+  -> ?bottom_search_on_change:(string -> unit Action.t)
   -> ?bottom_action:sidebar_action
   -> selected:string
-  -> on_select:(string -> unit Effect.t)
+  -> on_select:(string -> unit Action.t)
   -> tab list
   -> node
-val image : string -> node
+val image : ?color:text_color -> string -> node
 val image_file : string -> node
 val photo_picker
   :  ?is_enabled:bool
@@ -342,7 +412,7 @@ val photo_picker
   -> ?is_title_visible:bool
   -> title:string
   -> ?selected:string
-  -> on_select:(string -> unit Effect.t)
+  -> on_select:(string -> unit Action.t)
   -> unit
   -> node
 val photo_picker_payload
@@ -351,7 +421,7 @@ val photo_picker_payload
   -> ?is_title_visible:bool
   -> title:string
   -> ?selected:string
-  -> on_select:(image_payload -> unit Effect.t)
+  -> on_select:(image_payload -> unit Action.t)
   -> unit
   -> node
 val file_exporter
@@ -366,47 +436,62 @@ val share_link : ?is_enabled:bool -> title:string -> url:string -> unit -> node
 val file_importer
   :  title:string
   -> allowed_content_types:string list
-  -> on_select:(string -> unit Effect.t)
+  -> on_select:(string -> unit Action.t)
   -> unit
   -> node
 val camera_capture
   :  title:string
   -> ?captured:string
-  -> on_capture:(string -> unit Effect.t)
+  -> on_capture:(string -> unit Action.t)
   -> unit
   -> node
 val camera_capture_payload
   :  title:string
   -> ?captured:string
-  -> on_capture:(image_payload -> unit Effect.t)
+  -> on_capture:(image_payload -> unit Action.t)
   -> unit
   -> node
 val list_row : list_row -> node
 val custom_view : ?key:string -> kind:string -> unit -> node
 val padding : ?insets:edge_insets -> node -> node
 val regular_material_panel : ?corner_radius:float -> node -> node
+val secondary_fill_panel : ?corner_radius:float -> ?opacity:float -> node -> node
+val liquid_glass_panel
+  :  ?corner_radius:float
+  -> ?is_transparent:bool
+  -> ?tint_color:text_color
+  -> ?tint_opacity:float
+  -> node
+  -> node
+val context_menu : row_action list -> node -> node
 val frame : ?width:float -> ?height:float -> node -> node
 val navigation_title : string -> node -> node
-val searchable : text:string -> on_change:(string -> unit Effect.t) -> node -> node
+val searchable
+  :  ?prompt:string
+  -> text:string
+  -> on_change:(string -> unit Action.t)
+  -> node
+  -> node
 val toolbar_item
   :  ?system_image:string
   -> ?is_title_visible:bool
   -> ?is_enabled:bool
   -> ?menu_actions:toolbar_menu_action list
+  -> ?share_url:string
   -> id:string
   -> title:string
-  -> on_click:unit Effect.t
+  -> on_click:unit Action.t
   -> unit
   -> toolbar_item
 val toolbar : toolbar_item list -> node -> node
-val tap_action : on_click:unit Effect.t -> node -> node
+val tap_action : on_click:unit Action.t -> node -> node
 val safe_area_inset_bottom : node -> node -> node
 val alert_action
   :  ?role:alert_action_role
   -> ?is_enabled:bool
   -> id:string
   -> title:string
-  -> on_click:unit Effect.t
+  -> on_click:unit Action.t
   -> unit
   -> alert_action
 val alert
@@ -415,9 +500,9 @@ val alert
   -> ?message:string
   -> ?text:string
   -> ?placeholder:string
-  -> ?on_text_change:(string -> unit Effect.t)
+  -> ?on_text_change:(string -> unit Action.t)
   -> ?actions:alert_action list
-  -> ?on_dismiss:unit Effect.t
+  -> ?on_dismiss:unit Action.t
   -> unit
   -> node
   -> node
@@ -425,13 +510,13 @@ val sheet
   :  is_presented:bool
   -> content:node
   -> ?detents:presentation_detent list
-  -> ?on_dismiss:unit Effect.t
+  -> ?on_dismiss:unit Action.t
   -> node
   -> node
 val popover
   :  is_presented:bool
   -> content:node
-  -> ?on_dismiss:unit Effect.t
+  -> ?on_dismiss:unit Action.t
   -> node
   -> node
 val confirmation_dialog
@@ -439,7 +524,7 @@ val confirmation_dialog
   -> title:string
   -> ?message:string
   -> ?actions:alert_action list
-  -> ?on_dismiss:unit Effect.t
+  -> ?on_dismiss:unit Action.t
   -> unit
   -> node
   -> node
@@ -461,6 +546,7 @@ type backend_kind =
   | Form
   | Scroll_view
   | List
+  | Movable_rows
   | Navigation_stack
   | Navigation_path_stack
   | Navigation_link
@@ -484,37 +570,50 @@ type backend_kind =
   | File_importer
   | Camera_capture
   | Progress_view
+  | Congrats_effect
   | Custom_view of string
 
 type modifier =
   | Padding of edge_insets
   | Regular_material_panel of { corner_radius : float }
+  | Secondary_fill_panel of
+      { corner_radius : float
+      ; opacity : float
+      }
+  | Liquid_glass_panel of
+      { corner_radius : float
+      ; is_transparent : bool
+      ; tint_color : text_color option
+      ; tint_opacity : float
+      }
+  | Context_menu of row_action list
   | Frame of frame
   | Navigation_title of string
   | Searchable of
       { text : string
-      ; on_change : string -> unit Effect.t
+      ; prompt : string option
+      ; on_change : string -> unit Action.t
       }
   | Toolbar of toolbar_item list
-  | Tap_action of { on_click : unit Effect.t }
+  | Tap_action of { on_click : unit Action.t }
   | Safe_area_inset_bottom of { content : node }
   | Sheet of
       { is_presented : bool
       ; content : node
       ; detents : presentation_detent list
-      ; on_dismiss : unit Effect.t option
+      ; on_dismiss : unit Action.t option
       }
   | Popover of
       { is_presented : bool
       ; content : node
-      ; on_dismiss : unit Effect.t option
+      ; on_dismiss : unit Action.t option
       }
   | Confirmation_dialog of
       { is_presented : bool
       ; title : string
       ; message : string option
       ; actions : alert_action list
-      ; on_dismiss : unit Effect.t option
+      ; on_dismiss : unit Action.t option
       }
   | Alert of
       { is_presented : bool
@@ -522,40 +621,52 @@ type modifier =
       ; message : string option
       ; text : string option
       ; placeholder : string option
-      ; on_text_change : (string -> unit Effect.t) option
+      ; on_text_change : (string -> unit Action.t) option
       ; actions : alert_action list
-      ; on_dismiss : unit Effect.t option
+      ; on_dismiss : unit Action.t option
       }
 
 type 'view rendered_modifier =
   | Rendered_padding of edge_insets
   | Rendered_regular_material_panel of { corner_radius : float }
+  | Rendered_secondary_fill_panel of
+      { corner_radius : float
+      ; opacity : float
+      }
+  | Rendered_liquid_glass_panel of
+      { corner_radius : float
+      ; is_transparent : bool
+      ; tint_color : text_color option
+      ; tint_opacity : float
+      }
+  | Rendered_context_menu of row_action list
   | Rendered_frame of frame
   | Rendered_navigation_title of string
   | Rendered_searchable of
       { text : string
-      ; on_change : string -> unit Effect.t
+      ; prompt : string option
+      ; on_change : string -> unit Action.t
       }
   | Rendered_toolbar of toolbar_item list
-  | Rendered_tap_action of { on_click : unit Effect.t }
+  | Rendered_tap_action of { on_click : unit Action.t }
   | Rendered_safe_area_inset_bottom of { content : 'view }
   | Rendered_sheet of
       { is_presented : bool
       ; content : 'view option
       ; detents : presentation_detent list
-      ; on_dismiss : unit Effect.t option
+      ; on_dismiss : unit Action.t option
       }
   | Rendered_popover of
       { is_presented : bool
       ; content : 'view option
-      ; on_dismiss : unit Effect.t option
+      ; on_dismiss : unit Action.t option
       }
   | Rendered_confirmation_dialog of
       { is_presented : bool
       ; title : string
       ; message : string option
       ; actions : alert_action list
-      ; on_dismiss : unit Effect.t option
+      ; on_dismiss : unit Action.t option
       }
   | Rendered_alert of
       { is_presented : bool
@@ -563,9 +674,9 @@ type 'view rendered_modifier =
       ; message : string option
       ; text : string option
       ; placeholder : string option
-      ; on_text_change : (string -> unit Effect.t) option
+      ; on_text_change : (string -> unit Action.t) option
       ; actions : alert_action list
-      ; on_dismiss : unit Effect.t option
+      ; on_dismiss : unit Action.t option
       }
 
 type rendered_row_leading_button =
@@ -586,7 +697,11 @@ type rendered_row_action =
 type rendered_sidebar_action =
   { id : string
   ; title : string
+  ; subtitle : string option
   ; system_image : string option
+  ; avatar_image : string option
+  ; avatar_initial : string option
+  ; chrome : sidebar_action_chrome
   ; on_click : unit -> unit
   ; menu_actions : rendered_row_action list
   }
@@ -604,7 +719,9 @@ module Renderer : sig
     val destroy : view -> unit
     val set_text : view -> string -> unit
     val set_system_image : view -> string option -> unit
+    val set_image_color : view -> text_color option -> unit
     val set_button_subtitle : view -> string option -> unit
+    val set_button_style : view -> button_style -> unit
     val set_title_visible : view -> bool -> unit
     val set_text_attributes : view -> text_attributes -> unit
     val set_placeholder : view -> string option -> unit
@@ -633,6 +750,8 @@ module Renderer : sig
       -> compact_top_bar_visible:bool
       -> header_action:rendered_sidebar_action option
       -> actions:rendered_sidebar_action list
+      -> history_title:string option
+      -> history_actions:rendered_sidebar_action list
       -> bottom_search_placeholder:string option
       -> bottom_search_text:string
       -> bottom_search_on_change:(string -> unit) option
@@ -669,6 +788,7 @@ module Renderer : sig
       :  view
       -> title:string
       -> selected:string
+      -> style:picker_style
       -> on_select:(string -> unit) option
       -> rendered_picker_option list
       -> unit
@@ -706,7 +826,7 @@ module Renderer : sig
       -> title:string
       -> system_image:string option
       -> actions:menu_action list
-      -> schedule_event:(unit Effect.t -> unit)
+      -> schedule_event:(unit Action.t -> unit)
       -> unit
     val set_disclosure_group
       :  view
@@ -734,7 +854,7 @@ module Renderer : sig
     val set_enabled : view -> bool -> unit
     val set_modifiers
       :  view
-      -> schedule_event:(unit Effect.t -> unit)
+      -> schedule_event:(unit Action.t -> unit)
       -> view rendered_modifier list
       -> unit
   end
@@ -742,7 +862,7 @@ module Renderer : sig
   module Make (Backend : Backend) : sig
     type t
 
-    val mount : schedule_event:(unit Effect.t -> unit) -> node -> t
+    val mount : schedule_event:(unit Action.t -> unit) -> node -> t
     val update : t -> node -> unit
     val view : t -> Backend.view
   end
@@ -774,6 +894,10 @@ module For_testing : sig
     val reset : unit -> unit
     val stats : unit -> Stats.t
     val diff_stats : Stats.t -> Stats.t -> Stats.t
+    val clipboard_text : unit -> string option
+    val clipboard_image_file : unit -> string option
+    val playing_audio_file : unit -> string option
+    val is_audio_recording : unit -> bool
     val show : view -> string
     val show_at_path : view -> path:int list -> string
     val show_safe_area_inset_bottom_exn : view -> path:int list -> string
@@ -814,16 +938,29 @@ module For_testing : sig
     val select_date_exn : view -> path:int list -> selected:string -> unit
     val select_color_exn : view -> path:int list -> selected:string -> unit
     val click_menu_action_exn : view -> path:int list -> id:string -> unit
+    val click_sheet_menu_action_exn
+      :  view
+      -> path:int list
+      -> sheet_path:int list
+      -> id:string
+      -> unit
     val change_disclosure_group_exn : view -> path:int list -> is_expanded:bool -> unit
     val change_navigation_path_exn : view -> path:string list -> unit
     val refresh_list_exn : view -> path:int list -> unit
     val delete_list_row_exn : view -> path:int list -> index:int -> unit
     val move_list_row_exn : view -> path:int list -> from_index:int -> to_index:int -> unit
+    val move_rows_exn : view -> path:int list -> from_index:int -> to_index:int -> unit
     val submit_text_exn : view -> path:int list -> unit
     val submit_safe_area_inset_bottom_text_exn
       :  view
       -> path:int list
       -> inset_path:int list
+      -> unit
+    val select_safe_area_inset_bottom_photo_exn
+      :  view
+      -> path:int list
+      -> inset_path:int list
+      -> image_id:string
       -> unit
     val select_photo_exn : view -> path:int list -> image_id:string -> unit
     val capture_camera_exn : view -> path:int list -> image_id:string -> unit
@@ -862,6 +999,13 @@ module For_testing : sig
       -> path:int list
       -> sheet_path:int list
       -> is_on:bool
+      -> unit
+    val move_sheet_rows_exn
+      :  view
+      -> path:int list
+      -> sheet_path:int list
+      -> from_index:int
+      -> to_index:int
       -> unit
     val click_sheet_toolbar_item_exn : view -> path:int list -> id:string -> unit
     val click_nested_sheet_exn
@@ -917,10 +1061,17 @@ module For_testing : sig
     val click_sidebar_header_action_exn : view -> id:string -> unit
     val click_sidebar_action_exn : view -> id:string -> unit
     val click_sidebar_action_menu_action_exn : view -> id:string -> title:string -> unit
+    val click_sidebar_history_action_exn : view -> id:string -> unit
+    val click_sidebar_history_action_menu_action_exn
+      :  view
+      -> id:string
+      -> title:string
+      -> unit
     val click_sidebar_bottom_action_exn : view -> id:string -> unit
     val select_picker_exn : view -> path:int list -> id:string -> unit
     val click_row_leading_exn : view -> path:int list -> unit
     val click_row_action_exn : view -> path:int list -> title:string -> unit
+    val click_context_menu_action_exn : view -> path:int list -> title:string -> unit
     val click_row_menu_action_exn : view -> path:int list -> title:string -> unit
     val click_sheet_row_menu_action_exn
       :  view

@@ -19,7 +19,7 @@ module Http : sig
     ; timeout_seconds : float
     }
 
-  val send_json : request -> (string, string) Result.t Apple.Effect.t
+  val send_json : request -> (string, string) Result.t Apple.Action.t
 end
 
 val run_application

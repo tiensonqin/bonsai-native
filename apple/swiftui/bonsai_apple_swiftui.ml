@@ -88,6 +88,67 @@ external run_application
   = "bonsai_apple_swiftui_run_application"
 
 external run_on_main : (unit -> unit) -> unit = "bonsai_apple_swiftui_run_on_main"
+external set_native_clipboard_text : string -> unit = "bonsai_apple_swiftui_set_clipboard_text"
+external set_native_clipboard_image_file
+  :  string
+  -> unit
+  = "bonsai_apple_swiftui_set_clipboard_image_file"
+
+external toggle_native_audio_file_playback
+  :  string
+  -> unit
+  = "bonsai_apple_swiftui_toggle_audio_file_playback"
+
+external start_native_audio_recording
+  :  unit
+  -> unit
+  = "bonsai_apple_swiftui_start_audio_recording"
+
+external stop_native_audio_recording_and_transcribe
+  :  unit
+  -> string
+  = "bonsai_apple_swiftui_stop_audio_recording_and_transcribe"
+
+let audio_recording_result_of_native value =
+  match String.split value ~on:'\t' with
+  | [ transcript; local_path; filename; content_type; byte_size ] ->
+    let transcript =
+      let transcript = String.trim transcript in
+      if String.is_empty transcript then "Audio recording" else transcript
+    in
+    let local_path = String.trim local_path in
+    let filename =
+      let filename = String.trim filename in
+      if String.is_empty filename then "recording.m4a" else filename
+    in
+    let content_type =
+      let content_type = String.trim content_type in
+      if String.is_empty content_type then "audio/mp4" else content_type
+    in
+    let byte_size =
+      try Int.of_string (String.trim byte_size) with
+      | Failure _ -> 0
+    in
+    Apple.{ transcript; local_path; filename; content_type; byte_size }
+  | _ ->
+    Apple.
+      { transcript = "Audio recording"
+      ; local_path = ""
+      ; filename = "recording.m4a"
+      ; content_type = "audio/mp4"
+      ; byte_size = 0
+      }
+;;
+
+let () = Apple.set_clipboard_text_handler set_native_clipboard_text
+let () = Apple.set_clipboard_image_file_handler set_native_clipboard_image_file
+let () = Apple.set_toggle_audio_file_playback_handler toggle_native_audio_file_playback
+let () =
+  Apple.set_audio_recording_handlers
+    ~start:start_native_audio_recording
+    ~stop_and_transcribe:(fun () ->
+      stop_native_audio_recording_and_transcribe () |> audio_recording_result_of_native)
+;;
 
 external create_node : int -> native = "bonsai_apple_swiftui_create_node"
 external release_node : native -> unit = "bonsai_apple_swiftui_release_node"
@@ -105,6 +166,12 @@ external set_native_button_subtitle
   -> unit
   = "bonsai_apple_swiftui_set_button_subtitle"
 
+external set_native_button_style
+  :  native
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_button_style"
+
 external set_native_title_visible
   :  native
   -> bool
@@ -116,6 +183,12 @@ external set_native_image_source
   -> int
   -> unit
   = "bonsai_apple_swiftui_set_image_source"
+
+external set_native_image_color
+  :  native
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_image_color"
 
 external set_native_text_attributes
   :  native
@@ -167,6 +240,22 @@ external set_native_regular_material_panel
   -> float
   -> unit
   = "bonsai_apple_swiftui_set_regular_material_panel"
+
+external set_native_secondary_fill_panel
+  :  native
+  -> float
+  -> float
+  -> unit
+  = "bonsai_apple_swiftui_set_secondary_fill_panel"
+
+external set_native_liquid_glass_panel
+  :  native
+  -> float
+  -> bool
+  -> int
+  -> float
+  -> unit
+  = "bonsai_apple_swiftui_set_liquid_glass_panel"
 
 external set_native_spacing
   :  native
@@ -286,6 +375,7 @@ external clear_native_picker
   :  native
   -> string
   -> string
+  -> int
   -> int
   -> unit
   = "bonsai_apple_swiftui_clear_picker"
@@ -424,10 +514,25 @@ external append_native_list_row_menu_action
   -> unit
   = "bonsai_apple_swiftui_append_list_row_menu_action"
 
+external clear_native_context_menu_actions
+  :  native
+  -> unit
+  = "bonsai_apple_swiftui_clear_context_menu_actions"
+
+external append_native_context_menu_action
+  :  native
+  -> string
+  -> string option
+  -> int
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_append_context_menu_action"
+
 external set_native_searchable
   :  native
   -> int
   -> string
+  -> string option
   -> unit
   = "bonsai_apple_swiftui_set_searchable"
 
@@ -541,6 +646,7 @@ external append_native_toolbar_item
   -> string option
   -> bool
   -> bool
+  -> string option
   -> int
   -> unit
   = "bonsai_apple_swiftui_append_toolbar_item_bytecode"
@@ -553,6 +659,7 @@ external append_native_toolbar_menu_action
   -> string option
   -> int
   -> int
+  -> bool
   -> string option
   -> string option
   -> string option
@@ -607,18 +714,23 @@ external set_native_sidebar_header_action
   -> string option
   -> string option
   -> string option
+  -> string option
+  -> string option
   -> int
   -> unit
-  = "bonsai_apple_swiftui_set_sidebar_header_action"
+  = "bonsai_apple_swiftui_set_sidebar_header_action_byte"
+    "bonsai_apple_swiftui_set_sidebar_header_action"
 
 external append_native_sidebar_action
   :  native
   -> string
   -> string
   -> string option
+  -> string option
   -> int
   -> unit
-  = "bonsai_apple_swiftui_append_sidebar_action"
+  = "bonsai_apple_swiftui_append_sidebar_action_byte"
+    "bonsai_apple_swiftui_append_sidebar_action"
 
 external append_native_sidebar_action_menu_action
   :  native
@@ -629,14 +741,42 @@ external append_native_sidebar_action_menu_action
   -> unit
   = "bonsai_apple_swiftui_append_sidebar_action_menu_action"
 
+external set_native_sidebar_history_title
+  :  native
+  -> string option
+  -> unit
+  = "bonsai_apple_swiftui_set_sidebar_history_title"
+
+external append_native_sidebar_history_action
+  :  native
+  -> string
+  -> string
+  -> string option
+  -> string option
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_append_sidebar_history_action_byte"
+    "bonsai_apple_swiftui_append_sidebar_history_action"
+
+external append_native_sidebar_history_action_menu_action
+  :  native
+  -> string
+  -> string option
+  -> int
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_append_sidebar_history_action_menu_action"
+
 external set_native_sidebar_bottom_action
   :  native
   -> string option
   -> string option
   -> string option
   -> int
+  -> int
   -> unit
-  = "bonsai_apple_swiftui_set_sidebar_bottom_action"
+  = "bonsai_apple_swiftui_set_sidebar_bottom_action_byte"
+    "bonsai_apple_swiftui_set_sidebar_bottom_action"
 
 external make_native_controller
   :  native
@@ -732,6 +872,7 @@ let node_kind_id = function
   | Apple.Form -> 29
   | Apple.Scroll_view -> 6
   | Apple.List -> 7
+  | Apple.Movable_rows -> 37
   | Apple.Navigation_stack -> 8
   | Apple.Navigation_path_stack -> 30
   | Apple.Navigation_link -> 24
@@ -756,6 +897,7 @@ let node_kind_id = function
   | Apple.File_importer -> 18
   | Apple.Camera_capture -> 19
   | Apple.Progress_view -> 25
+  | Apple.Congrats_effect -> 14
 ;;
 
 module Backend = struct
@@ -777,6 +919,7 @@ module Backend = struct
     ; mutable list_event_ids : int list
     ; mutable menu_event_ids : int list
     ; mutable row_event_ids : int list
+    ; mutable context_menu_event_ids : int list
     ; mutable sidebar_event_ids : int list
     ; mutable sidebar_search_event_id : int option
     ; mutable controller : controller option
@@ -785,6 +928,7 @@ module Backend = struct
   let create kind =
     let native = create_node (node_kind_id kind) in
     (match kind with
+     | Apple.Congrats_effect -> set_native_text native "congrats-effect"
      | Apple.Custom_view kind -> set_native_text native kind
      | _ -> ());
     { native
@@ -804,6 +948,7 @@ module Backend = struct
     ; list_event_ids = []
     ; menu_event_ids = []
     ; row_event_ids = []
+    ; context_menu_event_ids = []
     ; sidebar_event_ids = []
     ; sidebar_search_event_id = None
     ; controller = None
@@ -826,6 +971,7 @@ module Backend = struct
     List.iter view.menu_event_ids ~f:(Hashtbl.remove event_handlers);
     clear_handler view.sidebar_search_event_id;
     List.iter view.row_event_ids ~f:(Hashtbl.remove event_handlers);
+    List.iter view.context_menu_event_ids ~f:(Hashtbl.remove event_handlers);
     List.iter view.sidebar_event_ids ~f:(Hashtbl.remove event_handlers);
     Option.iter view.controller ~f:release_controller;
     view.controller <- None;
@@ -835,6 +981,16 @@ module Backend = struct
   let set_text view text = set_native_text view.native text
   let set_system_image view system_image = set_native_system_image view.native system_image
   let set_button_subtitle view subtitle = set_native_button_subtitle view.native subtitle
+  let set_button_style view style =
+    let style_id =
+      match style with
+      | Apple.Bordered -> 0
+      | Apple.Bordered_prominent -> 1
+      | Apple.Plain -> 2
+    in
+    set_native_button_style view.native style_id
+  ;;
+
   let set_title_visible view is_visible = set_native_title_visible view.native is_visible
   let set_enabled view is_enabled = set_native_enabled view.native is_enabled
 
@@ -845,6 +1001,22 @@ module Backend = struct
 
   let set_image_source view source =
     set_native_image_source view.native (image_source_id source)
+  ;;
+
+  let optional_text_color_id = function
+    | None -> -1
+    | Some Apple.Primary -> 0
+    | Some Apple.Secondary -> 1
+    | Some Apple.Tertiary -> 2
+    | Some Apple.Red -> 3
+    | Some Apple.Green -> 4
+    | Some Apple.Orange -> 5
+    | Some Apple.Blue -> 6
+    | Some Apple.Accent -> 7
+  ;;
+
+  let set_image_color view color =
+    set_native_image_color view.native (optional_text_color_id color)
   ;;
 
   let text_style_id = function
@@ -863,14 +1035,20 @@ module Backend = struct
 
   let text_weight_id = function
     | Apple.Regular -> 0
-    | Apple.Semibold -> 1
-    | Apple.Bold -> 2
+    | Apple.Medium -> 1
+    | Apple.Semibold -> 2
+    | Apple.Bold -> 3
   ;;
 
   let text_color_id = function
     | Apple.Primary -> 0
     | Apple.Secondary -> 1
     | Apple.Tertiary -> 2
+    | Apple.Red -> 3
+    | Apple.Green -> 4
+    | Apple.Orange -> 5
+    | Apple.Blue -> 6
+    | Apple.Accent -> 7
   ;;
 
   let set_text_attributes view (attributes : Apple.text_attributes) =
@@ -886,6 +1064,7 @@ module Backend = struct
   let text_field_style_id = function
     | Apple.Rounded_border -> 0
     | Apple.Pill -> 1
+    | Apple.Plain_text -> 2
   ;;
 
   let set_text_field_style view style =
@@ -988,6 +1167,8 @@ module Backend = struct
     ~compact_top_bar_visible
     ~(header_action : Apple.rendered_sidebar_action option)
     ~(actions : Apple.rendered_sidebar_action list)
+    ~history_title
+    ~(history_actions : Apple.rendered_sidebar_action list)
     ~bottom_search_placeholder
     ~bottom_search_text
     ~bottom_search_on_change
@@ -999,6 +1180,11 @@ module Backend = struct
       let event_id = install_handler None (Click action.on_click) in
       view.sidebar_event_ids <- event_id :: view.sidebar_event_ids;
       event_id
+    in
+    let sidebar_action_chrome_id = function
+      | Apple.Default_chrome -> 0
+      | Apple.Prominent_capsule -> 1
+      | Apple.Liquid_icon -> 2
     in
     let bottom_search_event_id =
       match bottom_search_on_change with
@@ -1020,20 +1206,24 @@ module Backend = struct
       bottom_search_placeholder
       bottom_search_text
       bottom_search_event_id;
+    set_native_sidebar_history_title view.native history_title;
     (match header_action with
-     | None -> set_native_sidebar_header_action view.native None None None no_event
+     | None -> set_native_sidebar_header_action view.native None None None None None no_event
      | Some action ->
        set_native_sidebar_header_action
          view.native
          (Some action.Apple.id)
          (Some action.title)
          action.system_image
+         action.avatar_image
+         action.avatar_initial
          (install_sidebar_action action));
     List.iter actions ~f:(fun action ->
       append_native_sidebar_action
         view.native
         action.Apple.id
         action.title
+        action.subtitle
         action.system_image
         (install_sidebar_action action);
       List.iter action.menu_actions ~f:(fun menu_action ->
@@ -1050,8 +1240,30 @@ module Backend = struct
           menu_action.system_image
           style_id
           event_id));
+    List.iter history_actions ~f:(fun action ->
+      append_native_sidebar_history_action
+        view.native
+        action.Apple.id
+        action.title
+        action.subtitle
+        action.system_image
+        (install_sidebar_action action);
+      List.iter action.menu_actions ~f:(fun menu_action ->
+        let event_id = install_handler None (Click menu_action.on_click) in
+        view.sidebar_event_ids <- event_id :: view.sidebar_event_ids;
+        let style_id =
+          match menu_action.style with
+          | Apple.Default -> 0
+          | Apple.Destructive -> 1
+        in
+        append_native_sidebar_history_action_menu_action
+          view.native
+          menu_action.title
+          menu_action.system_image
+          style_id
+          event_id));
     match bottom_action with
-    | None -> set_native_sidebar_bottom_action view.native None None None no_event
+    | None -> set_native_sidebar_bottom_action view.native None None None no_event 0
     | Some action ->
       set_native_sidebar_bottom_action
         view.native
@@ -1059,6 +1271,7 @@ module Backend = struct
         (Some action.title)
         action.system_image
         (install_sidebar_action action)
+        (sidebar_action_chrome_id action.chrome)
   ;;
 
   let set_section view ~title = set_native_section view.native title
@@ -1067,6 +1280,7 @@ module Backend = struct
     view
     ~title
     ~selected
+    ~(style : Apple.picker_style)
     ~on_select
     (options : Apple.rendered_picker_option list)
     =
@@ -1083,7 +1297,12 @@ module Backend = struct
         view.picker_select_event_id <- Some event_id;
         event_id
     in
-    clear_native_picker view.native title selected event_id;
+    let style_id =
+      match style with
+      | Apple.Menu -> 0
+      | Apple.Segmented -> 1
+    in
+    clear_native_picker view.native title selected style_id event_id;
     List.iter options ~f:(fun option ->
       append_native_picker_option view.native option.Apple.id option.title)
   ;;
@@ -1340,6 +1559,27 @@ module Backend = struct
     !next_event_id
   ;;
 
+  let install_context_menu
+        view
+        ~schedule_event
+        ~(actions : Apple.row_action list)
+    =
+    List.iter view.context_menu_event_ids ~f:(Hashtbl.remove event_handlers);
+    view.context_menu_event_ids <- [];
+    clear_native_context_menu_actions view.native;
+    List.iter actions ~f:(fun action ->
+      let event_id =
+        install_handler None (Click (fun () -> schedule_event action.on_click))
+      in
+      view.context_menu_event_ids <- event_id :: view.context_menu_event_ids;
+      append_native_context_menu_action
+        view.native
+        action.title
+        action.system_image
+        (style_id action.style)
+        event_id)
+  ;;
+
   let refresh_list_row_callbacks
     view
     ~on_click
@@ -1418,14 +1658,14 @@ module Backend = struct
       ~menu_actions
   ;;
 
-  let install_searchable view ~schedule_event ~text ~on_change =
+  let install_searchable view ~schedule_event ~text ~prompt ~on_change =
     let event_id =
       install_handler
         view.search_event_id
         (Change (fun text -> schedule_event (on_change text)))
     in
     view.search_event_id <- Some event_id;
-    set_native_searchable view.native event_id text
+    set_native_searchable view.native event_id text prompt
   ;;
 
   let clear_searchable view =
@@ -1434,7 +1674,7 @@ module Backend = struct
     clear_native_searchable view.native
   ;;
 
-  let detent_id_and_value = function
+  let detent_id_and_value : Apple.presentation_detent -> int * float = function
     | Apple.Medium -> 0, 0.
     | Apple.Large -> 1, 0.
     | Apple.Fraction fraction -> 2, fraction
@@ -1636,6 +1876,7 @@ module Backend = struct
         item.system_image
         item.is_title_visible
         item.is_enabled
+        item.share_url
         event_id;
       List.iter item.menu_actions ~f:(fun action ->
         let event_id =
@@ -1649,6 +1890,7 @@ module Backend = struct
           action.system_image
           (style_id action.style)
           event_id
+          action.starts_section
           (Option.map action.file_export ~f:(fun export -> export.filename))
           (Option.map action.file_export ~f:(fun export -> export.content_type))
           (Option.map action.file_export ~f:(fun export -> export.content))))
@@ -1670,13 +1912,16 @@ module Backend = struct
     let saw_toolbar = ref false in
     let saw_padding = ref false in
     let saw_regular_material_panel = ref false in
+    let saw_secondary_fill_panel = ref false in
+    let saw_liquid_glass_panel = ref false in
+    let saw_context_menu = ref false in
     let saw_frame = ref false in
     let saw_navigation_title = ref false in
     let saw_tap_action = ref false in
     List.iter modifiers ~f:(function
-      | Apple.Rendered_searchable { text; on_change } ->
+      | Apple.Rendered_searchable { text; prompt; on_change } ->
         saw_searchable := true;
-        install_searchable view ~schedule_event ~text ~on_change
+        install_searchable view ~schedule_event ~text ~prompt ~on_change
       | Apple.Rendered_sheet { is_presented; content; detents; on_dismiss } ->
         saw_sheet := true;
         install_sheet view ~schedule_event ~is_presented ~content ~detents ~on_dismiss
@@ -1725,6 +1970,21 @@ module Backend = struct
       | Apple.Rendered_regular_material_panel { corner_radius } ->
         saw_regular_material_panel := true;
         set_native_regular_material_panel view.native corner_radius
+      | Apple.Rendered_secondary_fill_panel { corner_radius; opacity } ->
+        saw_secondary_fill_panel := true;
+        set_native_secondary_fill_panel view.native corner_radius opacity
+      | Apple.Rendered_liquid_glass_panel
+          { corner_radius; is_transparent; tint_color; tint_opacity } ->
+        saw_liquid_glass_panel := true;
+        set_native_liquid_glass_panel
+          view.native
+          corner_radius
+          is_transparent
+          (optional_text_color_id tint_color)
+          tint_opacity
+      | Apple.Rendered_context_menu actions ->
+        saw_context_menu := true;
+        install_context_menu view ~schedule_event ~actions
       | Apple.Rendered_frame { width; height } ->
         saw_frame := true;
         set_native_frame
@@ -1750,6 +2010,11 @@ module Backend = struct
     if not !saw_padding then set_native_padding view.native (-1.) (-1.) (-1.) (-1.);
     if not !saw_regular_material_panel
     then set_native_regular_material_panel view.native (-1.);
+    if not !saw_secondary_fill_panel
+    then set_native_secondary_fill_panel view.native (-1.) 0.;
+    if not !saw_liquid_glass_panel
+    then set_native_liquid_glass_panel view.native (-1.) false (-1) 0.;
+    if not !saw_context_menu then install_context_menu view ~schedule_event ~actions:[];
     if not !saw_frame then set_native_frame view.native (-1.) (-1.);
     if not !saw_navigation_title then set_native_navigation_title view.native None;
     if not !saw_tap_action then set_tap_action view None

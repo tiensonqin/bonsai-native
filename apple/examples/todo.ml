@@ -10,7 +10,7 @@ let component graph =
   let todos, set_todos = Apple.state graph ~key:"todos" [] in
   let add =
     if input = ""
-    then Apple.Effect.ignore
+    then Apple.Action.ignore
     else set_todos ({ id = input; title = input } :: todos)
   in
   Apple.vstack
