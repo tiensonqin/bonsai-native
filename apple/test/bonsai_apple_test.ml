@@ -666,6 +666,36 @@ let test_text_field_focus_renders () =
     "focused text field should expose focus state to the backend"
 ;;
 
+let test_text_field_native_clear_button_renders_and_clears () =
+  Backend.reset ();
+  let component graph =
+    let text, set_text = Apple.state graph ~key:"text" "Draft" in
+    Apple.text_field
+      ~style:Apple.Pill
+      ~clear_button:Apple.While_editing
+      ~text
+      ~placeholder:"New item"
+      ~on_change:set_text
+      ()
+  in
+  let app = App.create component in
+  App.flush_and_render app;
+  let root =
+    match App.view app with
+    | Some root -> root
+    | None -> failwith "app did not render"
+  in
+  require
+    (contains (Backend.show root) ~substring:"native-clear-button=while-editing")
+    "text fields should expose native clear-button mode instead of requiring app-level \
+     trailing buttons";
+  Backend.clear_text_exn root ~path:[];
+  require
+    (contains (Backend.show root) ~substring:"text=\"\"")
+    "native clear button should dispatch the text field change handler with an empty \
+     value"
+;;
+
 let test_button_renders_bordered_prominent_style () =
   Backend.reset ();
   let component _graph =
@@ -1201,6 +1231,7 @@ let () =
   test_button_label_renders_custom_clickable_content ();
   test_text_field_delete_backward_at_start_event ();
   test_text_field_focus_renders ();
+  test_text_field_native_clear_button_renders_and_clears ();
   test_button_renders_bordered_prominent_style ();
   test_button_renders_plain_style ();
   test_on_appear_event_rerenders_component_state ();

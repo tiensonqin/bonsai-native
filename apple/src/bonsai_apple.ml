@@ -382,6 +382,10 @@ type text_field_style =
   | Pill
   | Plain_text
 
+type text_field_clear_button =
+  | No_clear_button
+  | While_editing
+
 type button_style =
   | Bordered
   | Bordered_prominent
@@ -549,6 +553,7 @@ type node =
       ; placeholder : string option
       ; style : text_field_style
       ; axis : axis
+      ; clear_button : text_field_clear_button
       ; is_secure : bool
       ; is_focused : bool
       ; on_change : string -> unit Action.t
@@ -959,6 +964,11 @@ let text_field_style_name = function
   | Plain_text -> "plain"
 ;;
 
+let text_field_clear_button_name = function
+  | No_clear_button -> "none"
+  | While_editing -> "while-editing"
+;;
+
 let axis_name = function
   | Vertical -> "vertical"
   | Horizontal -> "horizontal"
@@ -989,6 +999,7 @@ let text_field
       ?placeholder
       ?(style = Rounded_border)
       ?(axis = Horizontal)
+      ?(clear_button = No_clear_button)
       ?(is_secure = false)
       ?(is_focused = false)
       ?on_submit
@@ -1002,6 +1013,7 @@ let text_field
     ; placeholder
     ; style
     ; axis
+    ; clear_button
     ; is_secure
     ; is_focused
     ; on_change
@@ -1627,6 +1639,7 @@ module Renderer = struct
     val set_placeholder : view -> string option -> unit
     val set_text_field_style : view -> text_field_style -> unit
     val set_text_field_axis : view -> axis -> unit
+    val set_text_field_clear_button : view -> text_field_clear_button -> unit
     val set_text_field_secure : view -> bool -> unit
     val set_text_field_focus : view -> bool -> unit
     val set_text_field_delete_backward_at_start : view -> (unit -> unit) option -> unit
@@ -1982,6 +1995,7 @@ module Renderer = struct
             ; placeholder
             ; style
             ; axis
+            ; clear_button
             ; is_secure
             ; is_focused
             ; on_change = _
@@ -1996,6 +2010,8 @@ module Renderer = struct
           ^ text_field_style_name style
           ^ ":"
           ^ axis_name axis
+          ^ ":"
+          ^ text_field_clear_button_name clear_button
           ^ ":"
           ^ bool is_secure
           ^ ":"
@@ -2372,6 +2388,7 @@ module Renderer = struct
            ; placeholder
            ; style
            ; axis
+           ; clear_button
            ; is_secure
            ; is_focused
            ; on_change
@@ -2382,6 +2399,7 @@ module Renderer = struct
          Backend.set_placeholder t.view placeholder;
          Backend.set_text_field_style t.view style;
          Backend.set_text_field_axis t.view axis;
+         Backend.set_text_field_clear_button t.view clear_button;
          Backend.set_text_field_secure t.view is_secure;
          Backend.set_text_field_focus t.view is_focused;
          Backend.set_text_field_delete_backward_at_start
@@ -3063,6 +3081,7 @@ module For_testing = struct
       ; mutable placeholder : string option
       ; mutable text_field_style : text_field_style
       ; mutable text_field_axis : axis
+      ; mutable text_field_clear_button : text_field_clear_button
       ; mutable text_field_secure : bool
       ; mutable text_field_focused : bool
       ; mutable on_text_delete_backward_at_start : (unit -> unit) option
@@ -3184,6 +3203,7 @@ module For_testing = struct
       ; placeholder = None
       ; text_field_style = Rounded_border
       ; text_field_axis = Horizontal
+      ; text_field_clear_button = No_clear_button
       ; text_field_secure = false
       ; text_field_focused = false
       ; on_text_delete_backward_at_start = None
@@ -3316,6 +3336,11 @@ module For_testing = struct
     let set_text_field_axis view axis =
       mutate ();
       view.text_field_axis <- axis
+    ;;
+
+    let set_text_field_clear_button view clear_button =
+      mutate ();
+      view.text_field_clear_button <- clear_button
     ;;
 
     let set_text_field_secure view is_secure =
@@ -3789,6 +3814,13 @@ module For_testing = struct
       let text_field_axis =
         match view.kind, view.text_field_axis with
         | Text_field, Vertical -> " axis=vertical"
+        | _ -> ""
+      in
+      let text_field_clear_button =
+        match view.kind, view.text_field_clear_button with
+        | Text_field, No_clear_button -> ""
+        | Text_field, clear_button ->
+          " native-clear-button=" ^ text_field_clear_button_name clear_button
         | _ -> ""
       in
       let text_field_secure =
@@ -4425,6 +4457,7 @@ module For_testing = struct
         ^ text_field_style
         ^ text_field_chrome
         ^ text_field_axis
+        ^ text_field_clear_button
         ^ text_field_secure
         ^ text_field_focused
         ^ toggle_selected
@@ -4574,6 +4607,15 @@ module For_testing = struct
       match view.on_change with
       | Some f -> f text
       | None -> failwith "View has no text-change handler"
+    ;;
+
+    let clear_text_exn view ~path =
+      let view = find_visible_exn view ~path in
+      (match view.kind, view.text_field_clear_button with
+       | Text_field, No_clear_button -> failwith "Text field has no native clear button"
+       | Text_field, _ -> ()
+       | _ -> failwith "View is not a text field");
+      change_text_exn view ~path:[] ~text:""
     ;;
 
     let change_safe_area_inset_bottom_text_exn view ~path ~inset_path ~text =

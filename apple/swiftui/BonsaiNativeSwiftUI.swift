@@ -519,6 +519,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var textColor: Int32 = 0
   @Published var textFieldStyle: Int32 = 0
   @Published var textFieldAxis: Int32 = 0
+  @Published var textFieldClearButton: Int32 = 0
   @Published var isTextFieldSecure = false
   @Published var isTextFieldFocused = false
   @Published var textFieldDeleteBackwardAtStartEventId: Int32?
@@ -1342,7 +1343,9 @@ private struct BonsaiNativeTextFieldView: View {
             }
           )
         )
-      } else if node.textFieldAxis == 0 && node.textFieldDeleteBackwardAtStartEventId != nil {
+      } else if node.textFieldAxis == 0
+        && (node.textFieldDeleteBackwardAtStartEventId != nil || node.textFieldClearButton != 0)
+      {
         BonsaiNativeDeleteAwareTextField(
           placeholder: node.placeholder ?? "",
           text: Binding(
@@ -1352,6 +1355,7 @@ private struct BonsaiNativeTextFieldView: View {
             }
           ),
           isFocused: node.isTextFieldFocused,
+          clearButtonMode: node.textFieldClearButton,
           onChange: { value in
             node.text = value
             model.sendChange(node.changeEventId, text: value)
@@ -1468,6 +1472,7 @@ private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
   let placeholder: String
   @Binding var text: String
   let isFocused: Bool
+  let clearButtonMode: Int32
   let onChange: (String) -> Void
   let onSubmit: () -> Void
   let onDeleteBackwardAtStart: () -> Void
@@ -1479,6 +1484,7 @@ private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
   func makeUIView(context: Context) -> BonsaiNativeDeleteAwareUITextField {
     let textField = BonsaiNativeDeleteAwareUITextField(frame: .zero)
     textField.borderStyle = .none
+    textField.clearButtonMode = uiTextFieldClearButtonMode(clearButtonMode)
     textField.delegate = context.coordinator
     textField.addTarget(
       context.coordinator,
@@ -1493,6 +1499,7 @@ private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
   func updateUIView(_ textField: BonsaiNativeDeleteAwareUITextField, context: Context) {
     context.coordinator.parent = self
     textField.placeholder = placeholder
+    textField.clearButtonMode = uiTextFieldClearButtonMode(clearButtonMode)
     if textField.text != text {
       textField.text = text
     }
@@ -1538,6 +1545,15 @@ private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
       parent.onSubmit()
       return false
     }
+  }
+}
+
+private func uiTextFieldClearButtonMode(_ mode: Int32) -> UITextField.ViewMode {
+  switch mode {
+  case 1:
+    return .whileEditing
+  default:
+    return .never
   }
 }
 
@@ -3695,6 +3711,15 @@ public func bonsai_native_swiftui_set_text_field_axis(
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.textFieldAxis = axis
+}
+
+@_cdecl("bonsai_native_swiftui_set_text_field_clear_button")
+public func bonsai_native_swiftui_set_text_field_clear_button(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ clearButton: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.textFieldClearButton = clearButton
 }
 
 @_cdecl("bonsai_native_swiftui_set_text_field_secure")

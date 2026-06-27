@@ -154,6 +154,10 @@ type text_field_style =
   | Pill
   | Plain_text
 
+type text_field_clear_button =
+  | No_clear_button
+  | While_editing
+
 type axis =
   | Vertical
   | Horizontal
@@ -264,6 +268,7 @@ val text_field
   :  ?placeholder:string
   -> ?style:text_field_style
   -> ?axis:axis
+  -> ?clear_button:text_field_clear_button
   -> ?is_secure:bool
   -> ?is_focused:bool
   -> ?on_submit:unit Action.t
@@ -805,6 +810,7 @@ module Renderer : sig
     val set_placeholder : view -> string option -> unit
     val set_text_field_style : view -> text_field_style -> unit
     val set_text_field_axis : view -> axis -> unit
+    val set_text_field_clear_button : view -> text_field_clear_button -> unit
     val set_text_field_secure : view -> bool -> unit
     val set_text_field_focus : view -> bool -> unit
     val set_text_field_delete_backward_at_start : view -> (unit -> unit) option -> unit
@@ -1034,6 +1040,7 @@ module For_testing : sig
       -> unit
 
     val change_text_exn : view -> path:int list -> text:string -> unit
+    val clear_text_exn : view -> path:int list -> unit
 
     val change_safe_area_inset_bottom_text_exn
       :  view

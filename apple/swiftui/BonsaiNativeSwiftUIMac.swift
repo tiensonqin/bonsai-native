@@ -287,6 +287,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var textColor: Int32 = 0
   @Published var textFieldStyle: Int32 = 0
   @Published var textFieldAxis: Int32 = 0
+  @Published var textFieldClearButton: Int32 = 0
   @Published var isTextFieldSecure = false
   @Published var isTextFieldFocused = false
   @Published var textFieldDeleteBackwardAtStartEventId: Int32?
@@ -1908,6 +1909,14 @@ public func bonsai_native_swiftui_set_text_field_style(_ pointer: UnsafeMutableR
 @_cdecl("bonsai_native_swiftui_set_text_field_axis")
 public func bonsai_native_swiftui_set_text_field_axis(_ pointer: UnsafeMutableRawPointer?, _ axis: Int32) {
   nativeNode(from: pointer)?.textFieldAxis = axis
+}
+
+@_cdecl("bonsai_native_swiftui_set_text_field_clear_button")
+public func bonsai_native_swiftui_set_text_field_clear_button(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ clearButton: Int32
+) {
+  nativeNode(from: pointer)?.textFieldClearButton = clearButton
 }
 
 @_cdecl("bonsai_native_swiftui_set_text_field_secure")

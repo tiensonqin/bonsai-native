@@ -243,6 +243,12 @@ external set_native_text_field_axis
   -> unit
   = "bonsai_apple_swiftui_set_text_field_axis"
 
+external set_native_text_field_clear_button
+  :  native
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_text_field_clear_button"
+
 external set_native_text_field_secure
   :  native
   -> bool
@@ -1174,8 +1180,19 @@ module Backend = struct
     | Apple.Vertical -> 1
   ;;
 
+  let text_field_clear_button_id = function
+    | Apple.No_clear_button -> 0
+    | Apple.While_editing -> 1
+  ;;
+
   let set_text_field_axis view axis =
     set_native_text_field_axis view.native (text_field_axis_id axis)
+  ;;
+
+  let set_text_field_clear_button view clear_button =
+    set_native_text_field_clear_button
+      view.native
+      (text_field_clear_button_id clear_button)
   ;;
 
   let set_text_field_secure view is_secure =
