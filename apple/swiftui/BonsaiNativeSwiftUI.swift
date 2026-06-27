@@ -2229,7 +2229,6 @@ private struct BonsaiNativeNodeView: View {
           .background(bonsaiHomeBodyBackground.ignoresSafeArea(.container, edges: .all))
           .offset(x: visibleWidth)
           .scrollDisabled(isCompactSidebarOpen || isCompactSidebarDragging)
-          .disabled(isCompactSidebarOpen)
           .clipShape(RoundedRectangle(cornerRadius: 28 * progress, style: .continuous))
 
           if isCompactSidebarOpen {
@@ -2284,7 +2283,7 @@ private struct BonsaiNativeNodeView: View {
       sidebarBottomControls
         .padding(.horizontal, 12)
         .padding(.top, 10)
-        .padding(.bottom, sidebarKeyboardBottomPadding)
+        .offset(y: -sidebarKeyboardBottomPadding)
         .animation(.easeOut(duration: 0.2), value: sidebarKeyboardBottomPadding)
     }
     .frame(maxHeight: .infinity, alignment: .topLeading)

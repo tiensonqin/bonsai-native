@@ -384,8 +384,9 @@ let test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome () =
   require
     (contains
        rendered
-       ~substring:"sidebar-bottom-controls=safe-area-inset keyboard-aware top-padding=10")
-    "compact sidebar bottom controls should match the Swift safe-area inset layout";
+       ~substring:"sidebar-bottom-controls=safe-area-inset keyboard-offset top-padding=10")
+    "compact sidebar bottom controls should keep Swift safe-area inset layout while \
+     offsetting above the keyboard";
   require
     (contains
        rendered
@@ -421,7 +422,20 @@ let test_compact_sidebar_bottom_search_tracks_keyboard () =
   require
     (contains source ~substring:"keyboardWillChangeFrameNotification")
     "compact sidebar should observe keyboard frame changes for the custom full-screen \
-     drawer"
+     drawer";
+  require
+    (contains source ~substring:".offset(y: -sidebarKeyboardBottomPadding)")
+    "compact sidebar bottom search should visually move above the keyboard; changing \
+     only the safe-area inset padding can still leave the control under the keyboard"
+;;
+
+let test_compact_sidebar_keeps_presented_sheets_interactive () =
+  let source = read_file swiftui_source_path in
+  require
+    (not (contains source ~substring:".disabled(isCompactSidebarOpen)"))
+    "compact sidebar should not disable the selected route subtree because app-level \
+     sheets are attached there in the OCaml backend; disabling that subtree makes \
+     practice/settings sheets open but not respond to taps"
 ;;
 
 let test_image_semantic_color_renders () =
@@ -1067,6 +1081,7 @@ let () =
   test_sidebar_actions_can_keep_compact_drawer_open ();
   test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome ();
   test_compact_sidebar_bottom_search_tracks_keyboard ();
+  test_compact_sidebar_keeps_presented_sheets_interactive ();
   test_navigation_value_links_do_not_preempt_system_push ();
   test_compact_sidebar_close_paths_share_swift_animation ();
   test_navigation_value_links_keep_primary_tap_for_link ();
