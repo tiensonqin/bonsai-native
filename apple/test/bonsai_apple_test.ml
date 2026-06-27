@@ -199,25 +199,25 @@ let test_tab_selection_updates_state () =
 let test_sidebar_history_actions_are_separate_and_clickable () =
   Backend.reset ();
   let component graph =
-    let selected, set_selected = Apple.state graph ~key:"selected" "chat" in
+    let selected, set_selected = Apple.state graph ~key:"selected" "compose" in
     let event, set_event = Apple.state graph ~key:"event" "none" in
     Apple.sidebar_split
-      ~title:"Lulala"
+      ~title:"Workspace"
       ~actions:
         [ Apple.sidebar_action
-            ~id:"inbox"
-            ~title:"Inbox"
+            ~id:"queue"
+            ~title:"Queue"
             ~system_image:"tray"
-            ~on_click:(set_event "inbox")
+            ~on_click:(set_event "queue")
             ()
         ]
       ~history_title:"Recent"
       ~history_actions:
         [ Apple.sidebar_action
-            ~id:"conversation-1"
-            ~title:"Find DNA cards"
-            ~subtitle:"You: Find DNA cards"
-            ~on_click:(set_event "conversation")
+            ~id:"history-item-1"
+            ~title:"Open sample item"
+            ~subtitle:"Preview: Open sample item"
+            ~on_click:(set_event "history-item")
             ~menu_actions:
               [ { title = "Rename"
                 ; system_image = Some "pencil"
@@ -229,7 +229,7 @@ let test_sidebar_history_actions_are_separate_and_clickable () =
         ]
       ~selected
       ~on_select:set_selected
-      [ Apple.tab ~id:"chat" ~title:"Chat" (Apple.text event) ]
+      [ Apple.tab ~id:"compose" ~title:"Compose" (Apple.text event) ]
   in
   let app = App.create component in
   App.flush_and_render app;
@@ -240,7 +240,7 @@ let test_sidebar_history_actions_are_separate_and_clickable () =
   in
   let rendered = Backend.show root in
   require
-    (contains rendered ~substring:"sidebar-actions=[inbox:Inbox:tray]")
+    (contains rendered ~substring:"sidebar-actions=[queue:Queue:tray]")
     "primary sidebar action should render separately";
   require
     (contains rendered ~substring:"sidebar-history-title=Recent")
@@ -249,20 +249,20 @@ let test_sidebar_history_actions_are_separate_and_clickable () =
     (contains
        rendered
        ~substring:
-         "sidebar-history-actions=[conversation-1:Find DNA cards:preview=You: Find DNA \
-          cards:menu=[Rename:pencil:default]]")
+         "sidebar-history-actions=[history-item-1:Open sample item:preview=Preview: Open \
+          sample item:menu=[Rename:pencil:default]]")
     "history action should render separately";
   require
     (contains rendered ~substring:"sidebar-history-menu-presentation=context-menu")
     "history actions should use Swift-style context menus instead of replacing the row \
      button";
-  Backend.click_sidebar_history_action_exn root ~id:"conversation-1";
+  Backend.click_sidebar_history_action_exn root ~id:"history-item-1";
   require
-    (Backend.find_text_exn root ~path:[ 0 ] = "conversation")
+    (Backend.find_text_exn root ~path:[ 0 ] = "history-item")
     "history action click should run";
   Backend.click_sidebar_history_action_menu_action_exn
     root
-    ~id:"conversation-1"
+    ~id:"history-item-1"
     ~title:"Rename";
   require
     (Backend.find_text_exn root ~path:[ 0 ] = "rename")
@@ -272,10 +272,10 @@ let test_sidebar_history_actions_are_separate_and_clickable () =
 let test_sidebar_actions_can_keep_compact_drawer_open () =
   Backend.reset ();
   let component graph =
-    let selected, set_selected = Apple.state graph ~key:"selected" "decks" in
+    let selected, set_selected = Apple.state graph ~key:"selected" "library" in
     let event, set_event = Apple.state graph ~key:"event" "none" in
     Apple.sidebar_split
-      ~title:"Lulala"
+      ~title:"Workspace"
       ~header_action:
         (Apple.sidebar_action
            ~id:"account"
@@ -286,30 +286,30 @@ let test_sidebar_actions_can_keep_compact_drawer_open () =
            ())
       ~actions:
         [ Apple.sidebar_action
-            ~selects_tab:"chat"
-            ~id:"inbox"
-            ~title:"Inbox"
+            ~selects_tab:"compose"
+            ~id:"queue"
+            ~title:"Queue"
             ~system_image:"tray"
-            ~on_click:(set_event "inbox")
+            ~on_click:(set_event "queue")
             ()
         ; Apple.sidebar_action
-            ~id:"decks"
-            ~title:"Decks"
+            ~id:"library"
+            ~title:"Library"
             ~system_image:"rectangle.stack"
-            ~on_click:(set_event "decks")
+            ~on_click:(set_event "library")
             ()
         ; Apple.sidebar_action
-            ~id:"practice-cards"
-            ~title:"Practice"
+            ~id:"run-action"
+            ~title:"Run"
             ~system_image:"rectangle.stack.badge.play"
             ~closes_sidebar:false
-            ~on_click:(set_event "practice")
+            ~on_click:(set_event "run")
             ()
         ]
       ~selected
       ~on_select:set_selected
-      [ Apple.tab ~id:"decks" ~title:"Decks" (Apple.text event)
-      ; Apple.tab ~id:"chat" ~title:"Chat" (Apple.text event)
+      [ Apple.tab ~id:"library" ~title:"Library" (Apple.text event)
+      ; Apple.tab ~id:"compose" ~title:"Compose" (Apple.text event)
       ]
   in
   let app = App.create component in
@@ -321,7 +321,7 @@ let test_sidebar_actions_can_keep_compact_drawer_open () =
   in
   let rendered = Backend.show root in
   require
-    (contains rendered ~substring:"inbox:Inbox:tray:selects=chat")
+    (contains rendered ~substring:"queue:Queue:tray:selects=compose")
     "sidebar action should expose the route it selects when it differs from its action id";
   require
     (contains rendered ~substring:"sidebar-header-action=account:Account:avatar=?:keeps-sidebar")
@@ -329,27 +329,27 @@ let test_sidebar_actions_can_keep_compact_drawer_open () =
   require
     (contains
        rendered
-       ~substring:"practice-cards:Practice:rectangle.stack.badge.play:keeps-sidebar")
+       ~substring:"run-action:Run:rectangle.stack.badge.play:keeps-sidebar")
     "sheet-style sidebar actions should expose that they keep the compact sidebar open";
   Backend.click_sidebar_header_action_exn root ~id:"account";
   require
     (String.equal (Backend.find_text_exn root ~path:[ 0 ]) "settings")
     "header action click should still run";
-  Backend.click_sidebar_action_exn root ~id:"practice-cards";
+  Backend.click_sidebar_action_exn root ~id:"run-action";
   require
-    (String.equal (Backend.find_text_exn root ~path:[ 0 ]) "practice")
+    (String.equal (Backend.find_text_exn root ~path:[ 0 ]) "run")
     "non-closing sidebar action click should still run"
 ;;
 
 let test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome () =
   Backend.reset ();
   let component graph =
-    let selected, set_selected = Apple.state graph ~key:"selected" "decks" in
+    let selected, set_selected = Apple.state graph ~key:"selected" "library" in
     Apple.sidebar_split
-      ~title:"Lulala"
+      ~title:"Workspace"
       ~selected
       ~on_select:set_selected
-      [ Apple.tab ~id:"decks" ~title:"Decks" (Apple.text "Decks") ]
+      [ Apple.tab ~id:"library" ~title:"Library" (Apple.text "Library") ]
   in
   let app = App.create component in
   App.flush_and_render app;
@@ -385,9 +385,9 @@ let test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome () =
   require
     (contains
        rendered
-       ~substring:"sidebar-bottom-controls=safe-area-inset keyboard-offset top-padding=10")
+       ~substring:"sidebar-bottom-controls=safe-area-inset keyboard-padding top-padding=10")
     "compact sidebar bottom controls should keep Swift safe-area inset layout while \
-     offsetting above the keyboard";
+     padding above the keyboard";
   require
     (contains
        rendered
@@ -425,9 +425,53 @@ let test_compact_sidebar_bottom_search_tracks_keyboard () =
     "compact sidebar should observe keyboard frame changes for the custom full-screen \
      drawer";
   require
-    (contains source ~substring:".offset(y: -sidebarKeyboardBottomPadding)")
-    "compact sidebar bottom search should visually move above the keyboard; changing \
-     only the safe-area inset padding can still leave the control under the keyboard"
+    (contains source ~substring:".padding(.bottom, sidebarKeyboardBottomPadding)")
+    "compact sidebar bottom search should relayout above the keyboard instead of only \
+     applying a visual offset"
+;;
+
+let test_compact_sidebar_keyboard_tracking_stays_on_drawer_root () =
+  let source = read_file swiftui_source_path in
+  let split_start =
+    match substring_index source ~substring:"private var compactSidebarSplitView" ~from:0 with
+    | Some index -> index
+    | None -> failwith "compactSidebarSplitView not found"
+  in
+  let content_start =
+    match substring_index source ~substring:"private var compactSidebarContent" ~from:split_start with
+    | Some index -> index
+    | None -> failwith "compactSidebarContent not found"
+  in
+  let split_source = String.sub source split_start (content_start - split_start) in
+  let sidebar_content_start =
+    match substring_index split_source ~substring:"compactSidebarContent" ~from:0 with
+    | Some index -> index
+    | None -> failwith "compactSidebarContent call not found"
+  in
+  let route_detail_start =
+    match substring_index split_source ~substring:"ZStack(alignment: .top)" ~from:sidebar_content_start with
+    | Some index -> index
+    | None -> failwith "selected route detail stack not found"
+  in
+  let sidebar_content_source =
+    String.sub split_source sidebar_content_start (route_detail_start - sidebar_content_start)
+  in
+  require
+    (not
+       (contains
+          sidebar_content_source
+          ~substring:"UIResponder.keyboardWillChangeFrameNotification"))
+    "compact sidebar keyboard notifications should be attached to the drawer root, not \
+     the sidebar content subtree; when the focused search field changes keyboard layout \
+     the content subtree can stop reporting the correct overlap";
+  require
+    (contains source ~substring:".padding(.bottom, sidebarKeyboardBottomPadding)")
+    "compact sidebar bottom controls should use keyboard padding so the search field \
+     gets relaid out above the keyboard instead of only being visually offset";
+  require
+    (not (contains source ~substring:".offset(y: -sidebarKeyboardBottomPadding)"))
+    "compact sidebar bottom controls should not rely on a pure visual offset because it \
+     can still leave the search field under the keyboard interaction region"
 ;;
 
 let test_compact_sidebar_keeps_presented_sheets_interactive () =
@@ -436,7 +480,7 @@ let test_compact_sidebar_keeps_presented_sheets_interactive () =
     (not (contains source ~substring:".disabled(isCompactSidebarOpen)"))
     "compact sidebar should not disable the selected route subtree because app-level \
      sheets are attached there in the OCaml backend; disabling that subtree makes \
-     practice/settings sheets open but not respond to taps"
+     modal sheets open but do not respond to taps"
 ;;
 
 let test_multiple_sheet_modifiers_install_only_presented_sheet () =
@@ -539,7 +583,7 @@ let test_button_label_renders_custom_clickable_content () =
       (Apple.hstack
          ~spacing:10.
          [ Apple.image ~color:Apple.Green "checkmark.circle.fill"
-         ; Apple.text "DNA"
+         ; Apple.text "Alpha"
          ; Apple.spacer ()
          ])
   in
@@ -694,8 +738,8 @@ let test_searchable_renders_prompt () =
   Backend.reset ();
   let component _graph =
     Apple.navigation_stack
-      [ Apple.text "Cards"
-        |> Apple.searchable ~text:"" ~prompt:"Search cards" ~on_change:(fun _ ->
+      [ Apple.text "Items"
+        |> Apple.searchable ~text:"" ~prompt:"Search items" ~on_change:(fun _ ->
           Apple.Action.ignore)
       ]
   in
@@ -707,7 +751,7 @@ let test_searchable_renders_prompt () =
     | None -> failwith "app did not render"
   in
   require
-    (contains (Backend.show root) ~substring:"searchable-prompt=\"Search cards\"")
+    (contains (Backend.show root) ~substring:"searchable-prompt=\"Search items\"")
     "searchable prompt should be visible to native renderers"
 ;;
 
@@ -716,7 +760,7 @@ let test_picker_renders_segmented_style () =
   let component _graph =
     Apple.picker
       ~style:Apple.Segmented
-      ~title:"Card type"
+      ~title:"Item type"
       ~selected:"basic"
       ~on_select:(fun _ -> Apple.Action.ignore)
       [ Apple.picker_option ~id:"basic" ~title:"Basic"
@@ -766,7 +810,7 @@ let test_pill_text_field_uses_liquid_glass_chrome () =
     Apple.text_field
       ~style:Apple.Pill
       ~text:""
-      ~placeholder:"New deck"
+      ~placeholder:"New item"
       ~on_change:(fun _ -> Apple.Action.ignore)
       ()
   in
@@ -782,7 +826,7 @@ let test_pill_text_field_uses_liquid_glass_chrome () =
     (contains
        rendered
        ~substring:
-         "placeholder=\"New deck\" style=pill chrome=liquid-glass corner-radius=26")
+         "placeholder=\"New item\" style=pill chrome=liquid-glass corner-radius=26")
     "pill text fields should render with Swift-style liquid glass chrome"
 ;;
 
@@ -809,10 +853,10 @@ let test_plain_text_field_renders_plain_style () =
     "plain text fields should expose SwiftUI plain text field style"
 ;;
 
-let test_file_image_can_render_swift_card_image_style () =
+let test_file_image_can_render_swift_image_file_style () =
   Backend.reset ();
   let component _graph =
-    Apple.image_file ~max_height:180. ~corner_radius:8. "/tmp/card.png"
+    Apple.image_file ~max_height:180. ~corner_radius:8. "/tmp/preview.png"
   in
   let app = App.create component in
   App.flush_and_render app;
@@ -827,7 +871,7 @@ let test_file_image_can_render_swift_card_image_style () =
     "file images should render from the filesystem";
   require
     (contains rendered ~substring:"image-style=max-height:\"180\":corner-radius:\"8\"")
-    "file images should expose Swift CardImageView sizing and clipping"
+    "file images should expose Swift image file sizing and clipping"
 ;;
 
 let test_keyboard_dismiss_controls_renders () =
@@ -1048,7 +1092,7 @@ let test_movable_rows_move_only_the_group_children () =
   in
   let component graph =
     let choices, set_choices =
-      Apple.state graph ~key:"choices" [ "Question"; "RNA"; "DNA"; "Hint" ]
+      Apple.state graph ~key:"choices" [ "Question"; "Beta"; "Alpha"; "Hint" ]
     in
     let move_choice ~from_index ~to_index =
       match choices with
@@ -1063,7 +1107,7 @@ let test_movable_rows_move_only_the_group_children () =
     in
     Apple.list
       [ Apple.section
-          ~key:"Card"
+          ~key:"Item"
           [ Apple.text (List.nth choices 0)
           ; Apple.movable_rows
               ~edit_mode:true
@@ -1096,7 +1140,7 @@ let test_movable_rows_move_only_the_group_children () =
     (contains (Backend.show root) ~substring:"text=\"Question\"")
     "non-movable rows should stay in the section";
   require
-    (String.equal (Backend.find_text_exn root ~path:[ 0; 1; 0 ]) "DNA")
+    (String.equal (Backend.find_text_exn root ~path:[ 0; 1; 0 ]) "Alpha")
     "moving the first movable row after the second should update that group"
 ;;
 
@@ -1144,6 +1188,7 @@ let () =
   test_sidebar_actions_can_keep_compact_drawer_open ();
   test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome ();
   test_compact_sidebar_bottom_search_tracks_keyboard ();
+  test_compact_sidebar_keyboard_tracking_stays_on_drawer_root ();
   test_compact_sidebar_keeps_presented_sheets_interactive ();
   test_multiple_sheet_modifiers_install_only_presented_sheet ();
   test_sheet_content_host_fills_sheet_background ();
@@ -1164,7 +1209,7 @@ let () =
   test_liquid_glass_panel_renders ();
   test_pill_text_field_uses_liquid_glass_chrome ();
   test_plain_text_field_renders_plain_style ();
-  test_file_image_can_render_swift_card_image_style ();
+  test_file_image_can_render_swift_image_file_style ();
   test_keyboard_dismiss_controls_renders ();
   test_scroll_dismisses_keyboard_renders ();
   test_secondary_fill_panel_renders ();

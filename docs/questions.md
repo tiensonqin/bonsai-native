@@ -5,7 +5,7 @@
 SwiftUI customizes views by chaining modifiers:
 
 ```swift
-Text("Inbox")
+Text("Queue")
   .font(.headline)
   .padding(.horizontal, 16)
   .padding(.vertical, 8)
@@ -35,7 +35,7 @@ The API should be:
 Expose modifiers as ordinary functions that transform `node -> node`.
 
 ```ocaml
-Apple.text "Inbox"
+Apple.text "Queue"
 |> Apple.font Apple.Headline
 |> Apple.padding ~horizontal:16. ~vertical:8.
 |> Apple.background Apple.Regular_material
@@ -52,7 +52,7 @@ Pros:
 - Works well with helpers:
 
 ```ocaml
-let card node =
+let panel node =
   node
   |> Apple.padding ~all:16.
   |> Apple.background Apple.Secondary_grouped_background
@@ -77,7 +77,7 @@ Put common customization directly on component constructors.
 Apple.text
   ~style:Apple.Headline
   ~padding:{ top = 8.; leading = 16.; bottom = 8.; trailing = 16. }
-  "Inbox"
+  "Queue"
 ```
 
 Pros:
@@ -95,7 +95,7 @@ Cons:
 Recommendation:
 
 Use optional arguments only for component identity and semantic content, not for
-general styling. For example, `Apple.text ~style ~weight ~color "Inbox"` is fine;
+general styling. For example, `Apple.text ~style ~weight ~color "Queue"` is fine;
 padding should stay a modifier.
 
 ### Answer C: Attribute Records
@@ -109,7 +109,7 @@ let row_style =
   ; background = Some Apple.Regular_material
   }
 in
-Apple.text "Inbox" |> Apple.style row_style
+Apple.text "Queue" |> Apple.style row_style
 ```
 
 Pros:
@@ -134,7 +134,7 @@ customization mechanism.
 Provide small builder modules for families of modifiers.
 
 ```ocaml
-Apple.text "Inbox"
+Apple.text "Queue"
 |> Apple.Padding.symmetric ~horizontal:16. ~vertical:8.
 |> Apple.Material.background Apple.Regular
 ```
@@ -193,14 +193,14 @@ Use a layered API:
 1. Constructors describe semantic UI:
 
 ```ocaml
-Apple.text ~style:Apple.Headline "Inbox"
+Apple.text ~style:Apple.Headline "Queue"
 Apple.list_row { title; trailing_text; leading_button; swipe_actions }
 ```
 
 2. Common modifiers are composable `node -> node` functions:
 
 ```ocaml
-Apple.text "Inbox"
+Apple.text "Queue"
 |> Apple.padding ~horizontal:16. ~vertical:8.
 |> Apple.frame ~max_width:`Infinity
 ```

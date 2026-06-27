@@ -100,13 +100,14 @@ private func bonsaiNativeNextAudioRecordingURL() throws -> URL {
     appropriateFor: nil,
     create: true
   )
+  let appDirectoryName = Bundle.main.bundleIdentifier ?? "BonsaiNative"
   let directory = base
-    .appendingPathComponent("Lulala", isDirectory: true)
-    .appendingPathComponent("ChatAudioRecordings", isDirectory: true)
+    .appendingPathComponent(appDirectoryName, isDirectory: true)
+    .appendingPathComponent("AudioRecordings", isDirectory: true)
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   let formatter = ISO8601DateFormatter()
   formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-  let filename = "chat-audio-\(formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")).m4a"
+  let filename = "audio-recording-\(formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")).m4a"
   return directory.appendingPathComponent(filename)
 }
 
@@ -1124,56 +1125,11 @@ private struct BonsaiNativeNodeView: View {
   private var listRowMainContent: some View {
     let content = Group {
       if node.rowContentStyle == 1 {
-        HStack(spacing: 12) {
-          VStack(alignment: .leading, spacing: 4) {
-            Text(node.text)
-              .font(.headline)
-              .strikethrough(node.rowTitleStrikethrough)
-            if !node.rowSubtitle.isEmpty {
-              Text(node.rowSubtitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-          }
-          Spacer()
-          if node.rowAccessory == 1 {
-            Image(systemName: "chevron.right")
-              .foregroundStyle(.tertiary)
-          }
-        }
+        summaryRowMainContent
       } else if node.rowContentStyle == 2 {
-        VStack(alignment: .leading, spacing: 6) {
-          Text(node.text)
-            .font(.headline)
-            .strikethrough(node.rowTitleStrikethrough)
-          if !node.rowSubtitle.isEmpty {
-            Text(node.rowSubtitle)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        detailRowMainContent
       } else {
-        HStack(spacing: 10) {
-          VStack(alignment: .leading, spacing: 2) {
-            Text(node.text)
-              .strikethrough(node.rowTitleStrikethrough)
-            if !node.rowSubtitle.isEmpty {
-              Text(node.rowSubtitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-          }
-          Spacer()
-          if !node.rowTrailingText.isEmpty {
-            Text(node.rowTrailingText)
-              .foregroundStyle(.secondary)
-          }
-          if node.rowAccessory == 1 {
-            Image(systemName: "chevron.right")
-              .foregroundStyle(.tertiary)
-          }
-        }
+        standardRowMainContent
       }
     }
 
@@ -1182,6 +1138,63 @@ private struct BonsaiNativeNodeView: View {
       .onTapGesture {
         model.sendClick(node.clickEventId)
       }
+  }
+
+  private var summaryRowMainContent: some View {
+    HStack(spacing: 12) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text(node.text)
+          .font(.headline)
+          .strikethrough(node.rowTitleStrikethrough)
+        if !node.rowSubtitle.isEmpty {
+          Text(node.rowSubtitle)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+      Spacer()
+      if node.rowAccessory == 1 {
+        Image(systemName: "chevron.right")
+          .foregroundStyle(.tertiary)
+      }
+    }
+  }
+
+  private var detailRowMainContent: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text(node.text)
+        .font(.headline)
+        .strikethrough(node.rowTitleStrikethrough)
+      if !node.rowSubtitle.isEmpty {
+        Text(node.rowSubtitle)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private var standardRowMainContent: some View {
+    HStack(spacing: 10) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(node.text)
+          .strikethrough(node.rowTitleStrikethrough)
+        if !node.rowSubtitle.isEmpty {
+          Text(node.rowSubtitle)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+      Spacer()
+      if !node.rowTrailingText.isEmpty {
+        Text(node.rowTrailingText)
+          .foregroundStyle(.secondary)
+      }
+      if node.rowAccessory == 1 {
+        Image(systemName: "chevron.right")
+          .foregroundStyle(.tertiary)
+      }
+    }
   }
 
   private var tabSelection: Binding<String> {
@@ -1715,7 +1728,7 @@ private struct BonsaiNativeCongratsEffectView: View {
       VStack(spacing: 8) {
         Image(systemName: "sparkles")
           .font(.system(size: 44, weight: .semibold))
-        Text("Deck complete")
+        Text("Complete")
           .font(.title2.weight(.semibold))
       }
       .padding(.horizontal, 28)

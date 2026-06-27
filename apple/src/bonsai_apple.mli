@@ -186,8 +186,8 @@ type row_action =
 
 type list_row_content_style =
   | Standard
-  | Deck_preview
-  | Card_preview
+  | Summary
+  | Detail
 
 type list_row_accessory =
   | No_accessory

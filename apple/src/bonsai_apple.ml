@@ -429,8 +429,8 @@ and sidebar_action_chrome =
 
 type list_row_content_style =
   | Standard
-  | Deck_preview
-  | Card_preview
+  | Summary
+  | Detail
 
 type list_row_accessory =
   | No_accessory
@@ -885,8 +885,8 @@ let default_text_attributes = { style = Body; weight = Regular; color = Primary 
 
 let list_row_content_style_name = function
   | Standard -> "standard"
-  | Deck_preview -> "deck-preview"
-  | Card_preview -> "card-preview"
+  | Summary -> "summary"
+  | Detail -> "detail"
 ;;
 
 let list_row_accessory_name = function
@@ -4216,7 +4216,7 @@ module For_testing = struct
           ^ " sidebar-safe-area-padding=swift top=max-safe-area-plus-5-or-54 \
              bottom=max-safe-area-or-34"
           ^ " sidebar-shell-background=home-body-ignores-safe-area-outside-clip"
-          ^ " sidebar-bottom-controls=safe-area-inset keyboard-offset top-padding=10"
+          ^ " sidebar-bottom-controls=safe-area-inset keyboard-padding top-padding=10"
           ^ " sidebar-scroll-disabled=dragging content-scroll-disabled=open-or-dragging"
           ^ " sidebar-route-selection-animation=swift-interactive-spring \
              route-change-and-close"

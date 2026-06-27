@@ -125,13 +125,14 @@ private func bonsaiNativeNextAudioRecordingURL() throws -> URL {
     appropriateFor: nil,
     create: true
   )
+  let appDirectoryName = Bundle.main.bundleIdentifier ?? "BonsaiNative"
   let directory = base
-    .appendingPathComponent("Lulala", isDirectory: true)
-    .appendingPathComponent("ChatAudioRecordings", isDirectory: true)
+    .appendingPathComponent(appDirectoryName, isDirectory: true)
+    .appendingPathComponent("AudioRecordings", isDirectory: true)
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   let formatter = ISO8601DateFormatter()
   formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-  let filename = "chat-audio-\(formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")).m4a"
+  let filename = "audio-recording-\(formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")).m4a"
   return directory.appendingPathComponent(filename)
 }
 
@@ -1253,7 +1254,7 @@ private struct BonsaiNativeCongratsEffectView: View {
       VStack(spacing: 8) {
         Image(systemName: "sparkles")
           .font(.system(size: 44, weight: .semibold))
-        Text("Deck complete")
+        Text("Complete")
           .font(.title2.weight(.semibold))
       }
       .padding(.horizontal, 28)
@@ -2229,16 +2230,6 @@ private struct BonsaiNativeNodeView: View {
             .background(bonsaiHomeBodyBackground.ignoresSafeArea(.container, edges: .all))
             .opacity(progress)
             .scrollDisabled(isCompactSidebarDragging)
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
-              sidebarKeyboardBottomPadding = compactSidebarKeyboardBottomPadding(
-                notification: notification,
-                containerMaxY: proxy.frame(in: .global).maxY,
-                safeAreaBottom: proxy.safeAreaInsets.bottom
-              )
-            }
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-              sidebarKeyboardBottomPadding = 0
-            }
 
           ZStack(alignment: .top) {
             if node.sidebarCompactTopBarVisible {
@@ -2292,6 +2283,16 @@ private struct BonsaiNativeNodeView: View {
               handleCompactSidebarDragEnded(value, revealWidth: revealWidth)
             }
         )
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
+          sidebarKeyboardBottomPadding = compactSidebarKeyboardBottomPadding(
+            notification: notification,
+            containerMaxY: proxy.frame(in: .global).maxY,
+            safeAreaBottom: proxy.safeAreaInsets.bottom
+          )
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+          sidebarKeyboardBottomPadding = 0
+        }
       }
     }
   }
@@ -2322,7 +2323,7 @@ private struct BonsaiNativeNodeView: View {
       sidebarBottomControls
         .padding(.horizontal, 12)
         .padding(.top, 10)
-        .offset(y: -sidebarKeyboardBottomPadding)
+        .padding(.bottom, sidebarKeyboardBottomPadding)
         .animation(.easeOut(duration: 0.2), value: sidebarKeyboardBottomPadding)
     }
     .frame(maxHeight: .infinity, alignment: .topLeading)
@@ -3066,16 +3067,16 @@ private struct BonsaiNativeListRowView: View {
   private var rowMainContent: some View {
     Group {
       if node.rowContentStyle == 1 {
-        deckPreviewRowMainContent
+        summaryRowMainContent
       } else if node.rowContentStyle == 2 {
-        cardPreviewRowMainContent
+        detailRowMainContent
       } else {
         standardRowMainContent
       }
     }
   }
 
-  private var deckPreviewRowMainContent: some View {
+  private var summaryRowMainContent: some View {
     HStack(spacing: 12) {
       VStack(alignment: .leading, spacing: 4) {
         Text(node.text)
@@ -3096,7 +3097,7 @@ private struct BonsaiNativeListRowView: View {
     }
   }
 
-  private var cardPreviewRowMainContent: some View {
+  private var detailRowMainContent: some View {
     VStack(alignment: .leading, spacing: 6) {
       rowPreviewImage(maxHeight: 160)
       Text(node.text)

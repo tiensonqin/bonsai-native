@@ -1709,8 +1709,8 @@ module Backend = struct
 
   let list_row_content_style_id = function
     | Apple.Standard -> 0
-    | Apple.Deck_preview -> 1
-    | Apple.Card_preview -> 2
+    | Apple.Summary -> 1
+    | Apple.Detail -> 2
   ;;
 
   let list_row_accessory_id = function
