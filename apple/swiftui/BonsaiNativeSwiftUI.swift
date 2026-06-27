@@ -3453,9 +3453,11 @@ public func bonsai_native_swiftui_http_send_json(
     request.httpBody = Data(body.utf8)
   }
 
+  let semaphore = DispatchSemaphore(value: 0)
+  var result: (Bool, String) = (false, "request did not complete")
+
   URLSession.shared.dataTask(with: request) { data, response, error in
     let responseBody = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-    let result: (Bool, String)
     if let error {
       result = (false, error.localizedDescription)
     } else if let httpResponse = response as? HTTPURLResponse,
@@ -3468,12 +3470,17 @@ public func bonsai_native_swiftui_http_send_json(
       result = (true, responseBody)
     }
 
-    DispatchQueue.main.async {
-      result.1.withCString { pointer in
-        callback?(context, result.0, pointer)
-      }
-    }
+    semaphore.signal()
   }.resume()
+
+  let timeout = timeoutSeconds > 0 ? timeoutSeconds : 30
+  if semaphore.wait(timeout: .now() + timeout) == .timedOut {
+    result = (false, "Request timed out")
+  }
+
+  result.1.withCString { pointer in
+    callback?(context, result.0, pointer)
+  }
 }
 
 @_cdecl("bonsai_native_swiftui_set_padding")
