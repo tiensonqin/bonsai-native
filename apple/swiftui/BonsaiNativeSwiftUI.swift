@@ -655,18 +655,32 @@ private final class BonsaiNativeHostModel: ObservableObject {
     self.callback = callback
   }
 
-  func sendClick(_ eventId: Int32?) {
+  func sendClick(_ eventId: Int32?, animation: Animation? = nil) {
     guard let eventId else { return }
     DispatchQueue.main.async { [callback] in
-      callback?(eventId, nil)
+      let emit = {
+        callback?(eventId, nil)
+      }
+      if let animation {
+        withAnimation(animation, emit)
+      } else {
+        emit()
+      }
     }
   }
 
-  func sendChange(_ eventId: Int32?, text: String) {
+  func sendChange(_ eventId: Int32?, text: String, animation: Animation? = nil) {
     guard let eventId else { return }
     DispatchQueue.main.async { [callback, text] in
-      text.withCString { pointer in
-        callback?(eventId, pointer)
+      let emit = {
+        text.withCString { pointer in
+          callback?(eventId, pointer)
+        }
+      }
+      if let animation {
+        withAnimation(animation, emit)
+      } else {
+        emit()
       }
     }
   }
@@ -1530,6 +1544,10 @@ private struct BonsaiNativeNodeView: View {
     case vertical
   }
 
+  private var compactSidebarSpringAnimation: Animation {
+    .interactiveSpring(response: 0.24, dampingFraction: 0.92, blendDuration: 0.08)
+  }
+
   var body: some View {
     applyModifiers(to: base)
       .fileExporter(
@@ -2160,7 +2178,10 @@ private struct BonsaiNativeNodeView: View {
           ZStack(alignment: .top) {
             if node.sidebarCompactTopBarVisible {
               selectedRouteDetail
+                .id(node.selectedTabId)
+                .transition(.opacity)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .animation(compactSidebarSpringAnimation, value: node.selectedTabId)
                 .environment(
                   \.bonsaiCompactSidebarToolbar,
                   BonsaiCompactSidebarToolbar(
@@ -2172,7 +2193,10 @@ private struct BonsaiNativeNodeView: View {
                 )
             } else {
               selectedRouteDetail
+                .id(node.selectedTabId)
+                .transition(.opacity)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .animation(compactSidebarSpringAnimation, value: node.selectedTabId)
             }
           }
           .frame(width: proxy.size.width, height: proxy.size.height)
@@ -2247,12 +2271,16 @@ private struct BonsaiNativeNodeView: View {
     if isOpen != isCompactSidebarOpen {
       bonsaiPerformLightHapticFeedback()
     }
-    withAnimation(.interactiveSpring(response: 0.24, dampingFraction: 0.92, blendDuration: 0.08)) {
-      isCompactSidebarOpen = isOpen
-      compactSidebarDragOffset = 0
-      compactSidebarDragAxis = nil
-      isCompactSidebarDragging = false
+    withAnimation(compactSidebarSpringAnimation) {
+      updateCompactSidebarOpenState(isOpen)
     }
+  }
+
+  private func updateCompactSidebarOpenState(_ isOpen: Bool) {
+    isCompactSidebarOpen = isOpen
+    compactSidebarDragOffset = 0
+    compactSidebarDragAxis = nil
+    isCompactSidebarDragging = false
   }
 
   private func handleCompactSidebarDragChanged(
@@ -2370,9 +2398,7 @@ private struct BonsaiNativeNodeView: View {
     if node.sidebarActions.isEmpty && node.sidebarHistoryActions.isEmpty {
       ForEach(node.tabs) { tab in
         Button {
-          node.selectedTabId = tab.id
-          model.sendChange(node.tabSelectEventId, text: tab.id)
-          setCompactSidebarOpen(false)
+          selectCompactSidebarTab(tab)
         } label: {
           sidebarRowLabel(
             title: tab.title,
@@ -2402,6 +2428,18 @@ private struct BonsaiNativeNodeView: View {
     }
   }
 
+  private func selectCompactSidebarTab(_ tab: BonsaiNativeTab) {
+    bonsaiDismissKeyboard()
+    if isCompactSidebarOpen {
+      bonsaiPerformLightHapticFeedback()
+    }
+    withAnimation(compactSidebarSpringAnimation) {
+      node.selectedTabId = tab.id
+      updateCompactSidebarOpenState(false)
+    }
+    model.sendChange(node.tabSelectEventId, text: tab.id, animation: compactSidebarSpringAnimation)
+  }
+
   @ViewBuilder
   private func sidebarActionButton(
     _ action: BonsaiNativeSidebarAction,
@@ -2410,10 +2448,7 @@ private struct BonsaiNativeNodeView: View {
   ) -> some View {
     if action.menuActions.isEmpty {
       Button {
-        if let eventId = action.eventId {
-          model.sendClick(eventId)
-        }
-        closeCompactSidebarIfNeeded(action)
+        performSidebarAction(action)
       } label: {
         sidebarRowLabel(
           title: action.title,
@@ -2426,10 +2461,7 @@ private struct BonsaiNativeNodeView: View {
     } else {
       if usesContextMenu {
         Button {
-          if let eventId = action.eventId {
-            model.sendClick(eventId)
-          }
-          closeCompactSidebarIfNeeded(action)
+          performSidebarAction(action)
         } label: {
           sidebarRowLabel(
             title: action.title,
@@ -2456,6 +2488,14 @@ private struct BonsaiNativeNodeView: View {
         .buttonStyle(.plain)
       }
     }
+  }
+
+  private func performSidebarAction(_ action: BonsaiNativeSidebarAction) {
+    let animation = action.closesSidebar ? compactSidebarSpringAnimation : nil
+    if let eventId = action.eventId {
+      model.sendClick(eventId, animation: animation)
+    }
+    closeCompactSidebarIfNeeded(action)
   }
 
   private func closeCompactSidebarIfNeeded(_ action: BonsaiNativeSidebarAction) {
@@ -2560,10 +2600,7 @@ private struct BonsaiNativeNodeView: View {
   }
 
   private func clickSidebarHeaderAction(_ action: BonsaiNativeSidebarAction) {
-    if let eventId = action.eventId {
-      model.sendClick(eventId)
-    }
-    closeCompactSidebarIfNeeded(action)
+    performSidebarAction(action)
   }
 
   @ViewBuilder
@@ -2633,10 +2670,7 @@ private struct BonsaiNativeNodeView: View {
   @ViewBuilder
   private func sidebarBottomActionButton(_ action: BonsaiNativeSidebarAction) -> some View {
     Button {
-      if let eventId = action.eventId {
-        model.sendClick(eventId)
-      }
-      closeCompactSidebarIfNeeded(action)
+      performSidebarAction(action)
     } label: {
       if action.chrome == 2 {
         Image(systemName: action.systemImage ?? "xmark")

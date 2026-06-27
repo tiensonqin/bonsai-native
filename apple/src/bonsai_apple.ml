@@ -4176,6 +4176,8 @@ module For_testing = struct
           ^ " sidebar-shell-background=home-body-ignores-safe-area-outside-clip"
           ^ " sidebar-bottom-controls=safe-area-inset top-padding=10"
           ^ " sidebar-scroll-disabled=dragging content-scroll-disabled=open-or-dragging"
+          ^ " sidebar-route-selection-animation=swift-interactive-spring \
+             route-change-and-close"
           ^ " sidebar-edge-gesture=enabled-when-compact-top-bar-visible"
           ^ " sidebar-open-close=swift-interactive-spring keyboard-dismiss \
              haptic-on-change"

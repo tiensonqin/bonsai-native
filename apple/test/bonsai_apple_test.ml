@@ -51,8 +51,11 @@ let test_compact_sidebar_close_paths_share_swift_animation () =
      setCompactSidebarOpen(false) for the Swift drawer animation, keyboard dismissal, \
      haptic, and drag-state reset";
   require
-    (count_substrings source ~substring:"closeCompactSidebarIfNeeded(action)" >= 4)
-    "compact sidebar action close paths should share the data-driven close helper";
+    (count_substrings source ~substring:"performSidebarAction(action)" >= 4)
+    "compact sidebar action taps should share the data-driven action helper";
+  require
+    (count_substrings source ~substring:"closeCompactSidebarIfNeeded(action)" = 1)
+    "compact sidebar action close policy should stay centralized";
   require
     (count_substrings source ~substring:"isCompactSidebarOpen = false" = 1)
     "compact sidebar close paths should not mutate isCompactSidebarOpen directly \
@@ -313,6 +316,13 @@ let test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome () =
        ~substring:
          "sidebar-scroll-disabled=dragging content-scroll-disabled=open-or-dragging")
     "compact sidebar should disable scroll during the same drawer states as Swift";
+  require
+    (contains
+       rendered
+       ~substring:
+         "sidebar-route-selection-animation=swift-interactive-spring \
+          route-change-and-close")
+    "compact sidebar route selection should animate route changes and drawer close";
   require
     (contains
        rendered
