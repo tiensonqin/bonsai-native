@@ -338,7 +338,7 @@ let test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome () =
   require
     (contains
        rendered
-       ~substring:"sidebar-bottom-controls=safe-area-inset top-padding=10")
+       ~substring:"sidebar-bottom-controls=safe-area-inset keyboard-aware top-padding=10")
     "compact sidebar bottom controls should match the Swift safe-area inset layout";
   require
     (contains
@@ -364,6 +364,18 @@ let test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome () =
        ~substring:
          "sidebar-open-close=swift-interactive-spring keyboard-dismiss haptic-on-change")
     "compact sidebar should use the same open and close interaction behavior as Swift"
+;;
+
+let test_compact_sidebar_bottom_search_tracks_keyboard () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"sidebarKeyboardBottomPadding")
+    "compact sidebar bottom search should add keyboard-aware bottom padding instead of \
+     staying behind the keyboard";
+  require
+    (contains source ~substring:"keyboardWillChangeFrameNotification")
+    "compact sidebar should observe keyboard frame changes for the custom full-screen \
+     drawer"
 ;;
 
 let test_image_semantic_color_renders () =
@@ -1008,6 +1020,7 @@ let () =
   test_sidebar_history_actions_are_separate_and_clickable ();
   test_sidebar_actions_can_keep_compact_drawer_open ();
   test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome ();
+  test_compact_sidebar_bottom_search_tracks_keyboard ();
   test_compact_sidebar_close_paths_share_swift_animation ();
   test_navigation_value_links_keep_primary_tap_for_link ();
   test_image_semantic_color_renders ();

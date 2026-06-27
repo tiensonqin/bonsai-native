@@ -1536,6 +1536,7 @@ private struct BonsaiNativeNodeView: View {
   @State private var compactSidebarDragOffset: CGFloat = 0
   @State private var compactSidebarDragAxis: DragAxis?
   @State private var isCompactSidebarDragging = false
+  @State private var sidebarKeyboardBottomPadding: CGFloat = 0
   @State private var toolbarExportFilename = "Export.txt"
   @State private var toolbarExportContentType = "public.plain-text"
   @State private var toolbarExportContent = ""
@@ -2194,6 +2195,16 @@ private struct BonsaiNativeNodeView: View {
             .background(bonsaiHomeBodyBackground.ignoresSafeArea(.container, edges: .all))
             .opacity(progress)
             .scrollDisabled(isCompactSidebarDragging)
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
+              sidebarKeyboardBottomPadding = compactSidebarKeyboardBottomPadding(
+                notification: notification,
+                containerMaxY: proxy.frame(in: .global).maxY,
+                safeAreaBottom: proxy.safeAreaInsets.bottom
+              )
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+              sidebarKeyboardBottomPadding = 0
+            }
 
           ZStack(alignment: .top) {
             if node.sidebarCompactTopBarVisible {
@@ -2278,8 +2289,21 @@ private struct BonsaiNativeNodeView: View {
       sidebarBottomControls
         .padding(.horizontal, 12)
         .padding(.top, 10)
+        .padding(.bottom, sidebarKeyboardBottomPadding)
+        .animation(.easeOut(duration: 0.2), value: sidebarKeyboardBottomPadding)
     }
     .frame(maxHeight: .infinity, alignment: .topLeading)
+  }
+
+  private func compactSidebarKeyboardBottomPadding(
+    notification: Notification,
+    containerMaxY: CGFloat,
+    safeAreaBottom: CGFloat
+  ) -> CGFloat {
+    guard let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
+    else { return 0 }
+    let overlap = max(0, containerMaxY - keyboardFrame.minY)
+    return max(0, overlap - safeAreaBottom)
   }
 
   private func compactSidebarVisibleWidth(revealWidth: CGFloat) -> CGFloat {
