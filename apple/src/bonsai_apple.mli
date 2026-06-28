@@ -310,6 +310,18 @@ val list
   -> row:('a -> node)
   -> node
 
+val lazy_list
+  :  ?on_refresh:unit Action.t
+  -> ?on_delete:(int -> unit Action.t)
+  -> ?on_move:(from_index:int -> to_index:int -> unit Action.t)
+  -> ?edit_mode:bool
+  -> ?focused_row_key:string
+  -> length:int
+  -> key:(int -> string)
+  -> row:(int -> node)
+  -> unit
+  -> node
+
 val movable_rows
   :  ?on_move:(from_index:int -> to_index:int -> unit Action.t)
   -> ?edit_mode:bool
@@ -527,7 +539,9 @@ val frame : ?width:float -> ?height:float -> ?max_width:float -> node -> node
 val navigation_title : string -> node -> node
 
 val searchable
-  :  ?prompt:string
+  :  ?is_presented:bool
+  -> ?on_presented_change:(bool -> unit Action.t)
+  -> ?prompt:string
   -> text:string
   -> on_change:(string -> unit Action.t)
   -> node
@@ -550,6 +564,7 @@ val tap_action : on_click:unit Action.t -> node -> node
 val on_appear : on_appear:unit Action.t -> node -> node
 val keyboard_dismiss_controls : node -> node
 val scroll_dismisses_keyboard : node -> node
+val hide_list_row_separator : node -> node
 val safe_area_inset_bottom : node -> node -> node
 
 val alert_action
@@ -659,14 +674,17 @@ type modifier =
   | Navigation_title of string
   | Searchable of
       { text : string
+      ; is_presented : bool option
       ; prompt : string option
       ; on_change : string -> unit Action.t
+      ; on_presented_change : (bool -> unit Action.t) option
       }
   | Toolbar of toolbar_item list
   | Tap_action of { on_click : unit Action.t }
   | On_appear of { on_appear : unit Action.t }
   | Keyboard_dismiss_controls
   | Scroll_dismisses_keyboard
+  | Hide_list_row_separator
   | Safe_area_inset_bottom of { content : node }
   | Sheet of
       { is_presented : bool
@@ -716,14 +734,17 @@ type 'view rendered_modifier =
   | Rendered_navigation_title of string
   | Rendered_searchable of
       { text : string
+      ; is_presented : bool option
       ; prompt : string option
       ; on_change : string -> unit Action.t
+      ; on_presented_change : (bool -> unit Action.t) option
       }
   | Rendered_toolbar of toolbar_item list
   | Rendered_tap_action of { on_click : unit Action.t }
   | Rendered_on_appear of { on_appear : unit Action.t }
   | Rendered_keyboard_dismiss_controls
   | Rendered_scroll_dismisses_keyboard
+  | Rendered_hide_list_row_separator
   | Rendered_safe_area_inset_bottom of { content : 'view }
   | Rendered_sheet of
       { is_presented : bool
@@ -829,6 +850,14 @@ module Renderer : sig
       -> edit_mode:bool
       -> focused_row_key:string option
       -> focused_row_index:int option
+      -> unit
+
+    val set_lazy_list_rows
+      :  view
+      -> length:int
+      -> version:int
+      -> render_row:(int -> view)
+      -> release_row:(int -> unit)
       -> unit
 
     val set_tabs

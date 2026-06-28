@@ -82,6 +82,12 @@ external register_event_callback
   -> unit
   = "bonsai_apple_swiftui_register_event_callback"
 
+external register_lazy_list_callbacks
+  :  (int -> int -> native)
+  -> (int -> int -> unit)
+  -> unit
+  = "bonsai_apple_swiftui_register_lazy_list_callbacks"
+
 external run_application
   :  (application_delegate -> application -> launch_options -> bool)
   -> unit
@@ -195,6 +201,12 @@ external set_native_scroll_dismisses_keyboard
   -> bool
   -> unit
   = "bonsai_apple_swiftui_set_scroll_dismisses_keyboard"
+
+external set_native_hide_list_row_separator
+  :  native
+  -> bool
+  -> unit
+  = "bonsai_apple_swiftui_set_hide_list_row_separator"
 
 external set_native_image_source
   :  native
@@ -326,6 +338,19 @@ external set_native_children
   -> native array
   -> unit
   = "bonsai_apple_swiftui_set_children"
+
+external set_native_lazy_list_rows
+  :  native
+  -> int
+  -> int
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_lazy_list_rows"
+
+external clear_native_lazy_list_rows
+  :  native
+  -> unit
+  = "bonsai_apple_swiftui_clear_lazy_list_rows"
 
 external set_native_list_behavior
   :  native
@@ -605,6 +630,7 @@ external set_native_searchable
   -> int
   -> string
   -> string option
+  -> (bool * int) option
   -> unit
   = "bonsai_apple_swiftui_set_searchable"
 
@@ -993,6 +1019,7 @@ module Backend = struct
     ; mutable change_event_id : int option
     ; mutable text_delete_backward_at_start_event_id : int option
     ; mutable search_event_id : int option
+    ; mutable search_presentation_event_id : int option
     ; mutable tab_select_event_id : int option
     ; mutable sheet_dismiss_event_id : int option
     ; mutable popover_dismiss_event_id : int option
@@ -1006,8 +1033,17 @@ module Backend = struct
     ; mutable context_menu_event_ids : int list
     ; mutable sidebar_event_ids : int list
     ; mutable sidebar_search_event_id : int option
+    ; mutable lazy_list_provider_id : int option
     ; mutable controller : controller option
     }
+
+  and lazy_list_provider =
+    { render_row : int -> view
+    ; release_row : int -> unit
+    }
+
+  let next_lazy_list_provider_id = ref 0
+  let lazy_list_providers : (int, lazy_list_provider) Hashtbl.t = Hashtbl.create 128
 
   let create kind =
     let native = create_node (node_kind_id kind) in
@@ -1024,6 +1060,7 @@ module Backend = struct
     ; change_event_id = None
     ; text_delete_backward_at_start_event_id = None
     ; search_event_id = None
+    ; search_presentation_event_id = None
     ; tab_select_event_id = None
     ; sheet_dismiss_event_id = None
     ; popover_dismiss_event_id = None
@@ -1037,17 +1074,26 @@ module Backend = struct
     ; context_menu_event_ids = []
     ; sidebar_event_ids = []
     ; sidebar_search_event_id = None
+    ; lazy_list_provider_id = None
     ; controller = None
     }
   ;;
 
+  let clear_lazy_list_provider view =
+    Option.iter view.lazy_list_provider_id ~f:(Hashtbl.remove lazy_list_providers);
+    view.lazy_list_provider_id <- None;
+    clear_native_lazy_list_rows view.native
+  ;;
+
   let destroy view =
+    clear_lazy_list_provider view;
     clear_handler view.click_event_id;
     clear_handler view.tap_event_id;
     clear_handler view.appear_event_id;
     clear_handler view.change_event_id;
     clear_handler view.text_delete_backward_at_start_event_id;
     clear_handler view.search_event_id;
+    clear_handler view.search_presentation_event_id;
     clear_handler view.tab_select_event_id;
     clear_handler view.sheet_dismiss_event_id;
     clear_handler view.popover_dismiss_event_id;
@@ -1231,9 +1277,24 @@ module Backend = struct
   let set_grid view ~columns ~spacing = set_native_grid view.native columns spacing
 
   let set_children view ~keyed:_ children =
+    clear_lazy_list_provider view;
     set_native_children
       view.native
       (Array.of_list (List.map children ~f:(fun child -> child.native)))
+  ;;
+
+  let set_lazy_list_rows view ~length ~version ~render_row ~release_row =
+    let provider_id =
+      match view.lazy_list_provider_id with
+      | Some provider_id -> provider_id
+      | None ->
+        Int.incr next_lazy_list_provider_id;
+        let provider_id = !next_lazy_list_provider_id in
+        view.lazy_list_provider_id <- Some provider_id;
+        provider_id
+    in
+    Hashtbl.set lazy_list_providers ~key:provider_id ~data:{ render_row; release_row };
+    set_native_lazy_list_rows view.native provider_id length version
   ;;
 
   let set_list_behavior
@@ -1843,19 +1904,47 @@ module Backend = struct
       ~menu_actions
   ;;
 
-  let install_searchable view ~schedule_event ~text ~prompt ~on_change =
+  let install_searchable
+        view
+        ~schedule_event
+        ~text
+        ~is_presented
+        ~prompt
+        ~on_change
+        ~on_presented_change
+    =
     let event_id =
       install_handler
         view.search_event_id
         (Change (fun text -> schedule_event (on_change text)))
     in
     view.search_event_id <- Some event_id;
-    set_native_searchable view.native event_id text prompt
+    let presentation =
+      match is_presented, on_presented_change with
+      | Some is_presented, Some on_presented_change ->
+        let event_id =
+          install_handler
+            view.search_presentation_event_id
+            (Change
+               (fun text ->
+                 schedule_event
+                   (on_presented_change (String.equal text "true"))))
+        in
+        view.search_presentation_event_id <- Some event_id;
+        Some (is_presented, event_id)
+      | _ ->
+        clear_handler view.search_presentation_event_id;
+        view.search_presentation_event_id <- None;
+        None
+    in
+    set_native_searchable view.native event_id text prompt presentation
   ;;
 
   let clear_searchable view =
     clear_handler view.search_event_id;
     view.search_event_id <- None;
+    clear_handler view.search_presentation_event_id;
+    view.search_presentation_event_id <- None;
     clear_native_searchable view.native
   ;;
 
@@ -2107,6 +2196,7 @@ module Backend = struct
     let saw_on_appear = ref false in
     let saw_keyboard_dismiss_controls = ref false in
     let saw_scroll_dismisses_keyboard = ref false in
+    let saw_hide_list_row_separator = ref false in
     let pending_sheet = ref None in
     let install_pending_sheet () =
       match !pending_sheet with
@@ -2115,9 +2205,17 @@ module Backend = struct
       | None -> clear_sheet view
     in
     List.iter modifiers ~f:(function
-      | Apple.Rendered_searchable { text; prompt; on_change } ->
+      | Apple.Rendered_searchable
+          { text; is_presented; prompt; on_change; on_presented_change } ->
         saw_searchable := true;
-        install_searchable view ~schedule_event ~text ~prompt ~on_change
+        install_searchable
+          view
+          ~schedule_event
+          ~text
+          ~is_presented
+          ~prompt
+          ~on_change
+          ~on_presented_change
       | Apple.Rendered_sheet { is_presented; content; detents; on_dismiss } ->
         saw_sheet := true;
         if is_presented && Option.is_none !pending_sheet
@@ -2209,7 +2307,10 @@ module Backend = struct
         set_native_keyboard_dismiss_controls view.native true
       | Apple.Rendered_scroll_dismisses_keyboard ->
         saw_scroll_dismisses_keyboard := true;
-        set_native_scroll_dismisses_keyboard view.native true);
+        set_native_scroll_dismisses_keyboard view.native true
+      | Apple.Rendered_hide_list_row_separator ->
+        saw_hide_list_row_separator := true;
+        set_native_hide_list_row_separator view.native true);
     if not !saw_searchable then clear_searchable view;
     if !saw_sheet then install_pending_sheet () else clear_sheet view;
     if not !saw_popover then clear_popover view;
@@ -2234,9 +2335,25 @@ module Backend = struct
     if not !saw_keyboard_dismiss_controls
     then set_native_keyboard_dismiss_controls view.native false;
     if not !saw_scroll_dismisses_keyboard
-    then set_native_scroll_dismisses_keyboard view.native false
+    then set_native_scroll_dismisses_keyboard view.native false;
+    if not !saw_hide_list_row_separator
+    then set_native_hide_list_row_separator view.native false
   ;;
 end
+
+let render_lazy_list_row provider_id index =
+  match Hashtbl.find Backend.lazy_list_providers provider_id with
+  | None -> Nativeint.zero
+  | Some provider -> (provider.render_row index).Backend.native
+;;
+
+let release_lazy_list_row provider_id index =
+  match Hashtbl.find Backend.lazy_list_providers provider_id with
+  | None -> ()
+  | Some provider -> provider.release_row index
+;;
+
+let () = register_lazy_list_callbacks render_lazy_list_row release_lazy_list_row
 
 module Renderer = Apple.Renderer.Make (Backend)
 module App = Apple.App.Make (Backend)

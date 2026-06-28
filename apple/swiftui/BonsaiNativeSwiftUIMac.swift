@@ -300,6 +300,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var imageCornerRadius: CGFloat?
   @Published var keyboardDismissControls = false
   @Published var scrollDismissesKeyboard = false
+  @Published var hideListRowSeparator = false
   @Published var placeholder: String?
   @Published var spacing: CGFloat?
   @Published var children: [BonsaiNativeNode] = []
@@ -313,6 +314,9 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var searchText = ""
   @Published var searchPrompt: String?
   @Published var searchEventId: Int32?
+  @Published var hasSearchPresentation = false
+  @Published var isSearchPresented = false
+  @Published var searchPresentationEventId: Int32?
   @Published var sheetContent: BonsaiNativeNode?
   @Published var bottomSafeAreaInsetContent: BonsaiNativeNode?
   @Published var isSheetPresented = false
@@ -540,6 +544,19 @@ private struct BonsaiNativeNavigationTitleModifier: ViewModifier {
   }
 }
 
+private struct BonsaiNativeListRowSeparatorModifier: ViewModifier {
+  @ObservedObject var node: BonsaiNativeNode
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if node.hideListRowSeparator {
+      content.listRowSeparator(.hidden)
+    } else {
+      content
+    }
+  }
+}
+
 private struct BonsaiNativeNodeView: View {
   @ObservedObject var node: BonsaiNativeNode
   @ObservedObject var model: BonsaiNativeHostModel
@@ -745,6 +762,7 @@ private struct BonsaiNativeNodeView: View {
         NavigationLink(value: navigationValue) {
           child(at: 0)
         }
+        .buttonStyle(.plain)
       } else {
         NavigationLink {
           child(at: 1)
@@ -757,6 +775,7 @@ private struct BonsaiNativeNodeView: View {
         } label: {
           child(at: 0)
         }
+        .buttonStyle(.plain)
       }
     case .navigationSplit:
       NavigationSplitView {
@@ -894,9 +913,8 @@ private struct BonsaiNativeNodeView: View {
   private var listView: some View {
     ScrollViewReader { proxy in
       List {
-        ForEach(Array(node.children.enumerated()), id: \.offset) { index, child in
+        ForEach(node.children) { child in
           BonsaiNativeNodeView(node: child, model: model)
-            .id(index)
         }
         .onDelete { offsets in
           guard let index = offsets.first else { return }
@@ -921,9 +939,11 @@ private struct BonsaiNativeNodeView: View {
 
   private func scrollFocusedRow(_ proxy: ScrollViewProxy) {
     guard let index = node.listFocusedRowIndex else { return }
+    guard node.children.indices.contains(index) else { return }
+    let focusedNode = node.children[index]
     DispatchQueue.main.async {
       withAnimation(.easeInOut(duration: 0.18)) {
-        proxy.scrollTo(index)
+        proxy.scrollTo(focusedNode.id)
       }
     }
   }
@@ -1383,6 +1403,7 @@ private struct BonsaiNativeNodeView: View {
       )
     )
       .modifier(BonsaiNativeNavigationTitleModifier(node: node))
+      .modifier(BonsaiNativeListRowSeparatorModifier(node: node))
       .alert(
         node.alertTitle,
         isPresented: Binding(
@@ -1469,7 +1490,34 @@ private struct BonsaiNativeNodeView: View {
           model.sendChange(node.searchEventId, text: value)
         }
       )
-      if let prompt = node.searchPrompt {
+      let isPresented = Binding(
+        get: { node.isSearchPresented },
+        set: { value in
+          node.isSearchPresented = value
+          model.sendChange(node.searchPresentationEventId, text: value ? "true" : "false")
+        }
+      )
+      if node.hasSearchPresentation, let prompt = node.searchPrompt {
+        base
+          .searchable(text: text, isPresented: isPresented, placement: .toolbar, prompt: Text(prompt))
+          .sheet(isPresented: sheetBinding) {
+            if let sheetContent = node.sheetContent {
+              bonsaiSheetContentHost {
+                BonsaiNativeNodeView(node: sheetContent, model: model)
+              }
+            }
+          }
+      } else if node.hasSearchPresentation {
+        base
+          .searchable(text: text, isPresented: isPresented, placement: .toolbar)
+          .sheet(isPresented: sheetBinding) {
+          if let sheetContent = node.sheetContent {
+            bonsaiSheetContentHost {
+              BonsaiNativeNodeView(node: sheetContent, model: model)
+            }
+          }
+        }
+      } else if let prompt = node.searchPrompt {
         base
           .searchable(text: text, placement: .toolbar, prompt: Text(prompt))
           .sheet(isPresented: sheetBinding) {
@@ -1854,6 +1902,14 @@ public func bonsai_native_swiftui_set_scroll_dismisses_keyboard(
   nativeNode(from: pointer)?.scrollDismissesKeyboard = isEnabled
 }
 
+@_cdecl("bonsai_native_swiftui_set_hide_list_row_separator")
+public func bonsai_native_swiftui_set_hide_list_row_separator(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ isHidden: Bool
+) {
+  nativeNode(from: pointer)?.hideListRowSeparator = isHidden
+}
+
 @_cdecl("bonsai_native_swiftui_set_image_source")
 public func bonsai_native_swiftui_set_image_source(_ pointer: UnsafeMutableRawPointer?, _ source: Int32) {
   nativeNode(from: pointer)?.imageSource = source
@@ -2186,13 +2242,19 @@ public func bonsai_native_swiftui_set_searchable(
   _ pointer: UnsafeMutableRawPointer?,
   _ eventId: Int32,
   _ textPointer: UnsafePointer<CChar>?,
-  _ promptPointer: UnsafePointer<CChar>?
+  _ promptPointer: UnsafePointer<CChar>?,
+  _ hasPresentation: Bool,
+  _ isPresented: Bool,
+  _ presentationEventId: Int32
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.isSearchable = eventId >= 0
   node.searchEventId = eventId < 0 ? nil : eventId
   node.searchText = textPointer.map(String.init(cString:)) ?? ""
   node.searchPrompt = promptPointer.map(String.init(cString:))
+  node.hasSearchPresentation = hasPresentation
+  node.isSearchPresented = isPresented
+  node.searchPresentationEventId = presentationEventId < 0 ? nil : presentationEventId
 }
 
 @_cdecl("bonsai_native_swiftui_set_sheet")

@@ -595,6 +595,16 @@ type node =
       ; edit_mode : bool
       ; focused_row_key : string option
       }
+  | Lazy_list_node of
+      { length : int
+      ; key : int -> string
+      ; row : int -> node
+      ; on_refresh : unit Action.t option
+      ; on_delete : (int -> unit Action.t) option
+      ; on_move : (from_index:int -> to_index:int -> unit Action.t) option
+      ; edit_mode : bool
+      ; focused_row_key : string option
+      }
   | Movable_rows_node of
       { rows : keyed_node list
       ; on_move : (from_index:int -> to_index:int -> unit Action.t) option
@@ -758,14 +768,17 @@ and modifier =
   | Navigation_title of string
   | Searchable of
       { text : string
+      ; is_presented : bool option
       ; prompt : string option
       ; on_change : string -> unit Action.t
+      ; on_presented_change : (bool -> unit Action.t) option
       }
   | Toolbar of toolbar_item list
   | Tap_action of { on_click : unit Action.t }
   | On_appear of { on_appear : unit Action.t }
   | Keyboard_dismiss_controls
   | Scroll_dismisses_keyboard
+  | Hide_list_row_separator
   | Safe_area_inset_bottom of { content : node }
   | Sheet of
       { is_presented : bool
@@ -815,14 +828,17 @@ type 'view rendered_modifier =
   | Rendered_navigation_title of string
   | Rendered_searchable of
       { text : string
+      ; is_presented : bool option
       ; prompt : string option
       ; on_change : string -> unit Action.t
+      ; on_presented_change : (bool -> unit Action.t) option
       }
   | Rendered_toolbar of toolbar_item list
   | Rendered_tap_action of { on_click : unit Action.t }
   | Rendered_on_appear of { on_appear : unit Action.t }
   | Rendered_keyboard_dismiss_controls
   | Rendered_scroll_dismisses_keyboard
+  | Rendered_hide_list_row_separator
   | Rendered_safe_area_inset_bottom of { content : 'view }
   | Rendered_sheet of
       { is_presented : bool
@@ -1050,6 +1066,21 @@ let list ?on_refresh ?on_delete ?on_move ?(edit_mode = false) ?focused_row_key r
       { key; node = row value })
   in
   List_node { rows; on_refresh; on_delete; on_move; edit_mode; focused_row_key }
+;;
+
+let lazy_list
+      ?on_refresh
+      ?on_delete
+      ?on_move
+      ?(edit_mode = false)
+      ?focused_row_key
+      ~length
+      ~key
+      ~row
+      ()
+  =
+  if length < 0 then invalid_arg "Apple.lazy_list length must be non-negative";
+  Lazy_list_node { length; key; row; on_refresh; on_delete; on_move; edit_mode; focused_row_key }
 ;;
 
 let movable_rows ?on_move ?(edit_mode = false) rows ~key ~row =
@@ -1456,8 +1487,9 @@ let frame ?width ?height ?max_width node =
 
 let navigation_title title node = Modified_node (Navigation_title title, node)
 
-let searchable ?prompt ~text ~on_change node =
-  Modified_node (Searchable { text; prompt; on_change }, node)
+let searchable ?is_presented ?on_presented_change ?prompt ~text ~on_change node =
+  Modified_node
+    (Searchable { text; is_presented; prompt; on_change; on_presented_change }, node)
 ;;
 
 let toolbar_item
@@ -1488,6 +1520,7 @@ let tap_action ~on_click node = Modified_node (Tap_action { on_click }, node)
 let on_appear ~on_appear node = Modified_node (On_appear { on_appear }, node)
 let keyboard_dismiss_controls node = Modified_node (Keyboard_dismiss_controls, node)
 let scroll_dismisses_keyboard node = Modified_node (Scroll_dismisses_keyboard, node)
+let hide_list_row_separator node = Modified_node (Hide_list_row_separator, node)
 
 let safe_area_inset_bottom content node =
   Modified_node (Safe_area_inset_bottom { content }, node)
@@ -1589,6 +1622,7 @@ let backend_kind = function
   | Form_node _ -> Form
   | Scroll_view_node _ -> Scroll_view
   | List_node _ -> List
+  | Lazy_list_node _ -> List
   | Movable_rows_node _ -> Movable_rows
   | Navigation_stack_node _ -> Navigation_stack
   | Navigation_path_stack_node _ -> Navigation_path_stack
@@ -1661,6 +1695,14 @@ module Renderer = struct
       -> edit_mode:bool
       -> focused_row_key:string option
       -> focused_row_index:int option
+      -> unit
+
+    val set_lazy_list_rows
+      :  view
+      -> length:int
+      -> version:int
+      -> render_row:(int -> view)
+      -> release_row:(int -> unit)
       -> unit
 
     val set_tabs
@@ -1820,6 +1862,8 @@ module Renderer = struct
       ; schedule_event : unit Action.t -> unit
       ; mutable children : child list
       ; mutable modifier_children : modifier_child list
+      ; lazy_rows : (int, string * t) Hashtbl.t
+      ; mutable lazy_list_version : int
       }
 
     let view t = t.view
@@ -1827,7 +1871,14 @@ module Renderer = struct
     let rec destroy t =
       List.iter t.children ~f:(fun child -> destroy child.mounted);
       List.iter t.modifier_children ~f:(fun child -> destroy child.mounted);
+      clear_lazy_rows t;
       Backend.destroy t.view
+
+    and clear_lazy_rows t =
+      let rows = Hashtbl.fold (fun _index (_key, row) rows -> row :: rows) t.lazy_rows [] in
+      Hashtbl.clear t.lazy_rows;
+      t.lazy_list_version <- 0;
+      List.iter rows ~f:destroy
     ;;
 
     let rec fingerprint node =
@@ -1920,13 +1971,15 @@ module Renderer = struct
           "context-menu:" ^ list (List.map actions ~f:row_action_signature)
         | Frame frame -> "frame:" ^ frame_value frame
         | Navigation_title title -> "navigation-title:" ^ title
-        | Searchable { text; prompt; on_change = _ } ->
-          "searchable:" ^ text ^ ":" ^ opt prompt
+        | Searchable { text; is_presented; prompt; on_change = _; on_presented_change = _ }
+          ->
+          "searchable:" ^ text ^ ":" ^ opt (Option.map is_presented ~f:bool) ^ ":" ^ opt prompt
         | Toolbar items -> "toolbar:" ^ list (List.map items ~f:toolbar_item_signature)
         | Tap_action _ -> "tap-action"
         | On_appear _ -> "on-appear"
         | Keyboard_dismiss_controls -> "keyboard-dismiss-controls"
         | Scroll_dismisses_keyboard -> "scroll-dismisses-keyboard"
+        | Hide_list_row_separator -> "hide-list-row-separator"
         | Safe_area_inset_bottom { content } ->
           "safe-area-inset-bottom:" ^ fingerprint content
         | Sheet { is_presented; content; detents; on_dismiss = _ } ->
@@ -2053,6 +2106,19 @@ module Renderer = struct
         | List_node { rows; on_refresh; on_delete; on_move; edit_mode; focused_row_key } ->
           "list:"
           ^ list (List.map rows ~f:(fun row -> row.key ^ ":" ^ fingerprint row.node))
+          ^ ":"
+          ^ bool (Option.is_some on_refresh)
+          ^ ":"
+          ^ bool (Option.is_some on_delete)
+          ^ ":"
+          ^ bool (Option.is_some on_move)
+          ^ ":"
+          ^ bool edit_mode
+          ^ ":"
+          ^ opt focused_row_key
+        | Lazy_list_node { length; on_refresh; on_delete; on_move; edit_mode; focused_row_key; _ } ->
+          "lazy-list:"
+          ^ string_of_int length
           ^ ":"
           ^ bool (Option.is_some on_refresh)
           ^ ":"
@@ -2292,6 +2358,8 @@ module Renderer = struct
         ; schedule_event
         ; children = []
         ; modifier_children = []
+        ; lazy_rows = Hashtbl.create 16
+        ; lazy_list_version = 0
         }
       in
       patch_same_kind t node modifiers;
@@ -2319,6 +2387,7 @@ module Renderer = struct
       | Form_node _
       | Scroll_view_node _
       | List_node _
+      | Lazy_list_node _
       | Movable_rows_node _
       | Navigation_stack_node _
       | Navigation_path_stack_node _
@@ -2475,6 +2544,7 @@ module Renderer = struct
          Backend.set_on_change t.view None;
          reconcile_positional t [ child ]
        | List_node { rows; on_refresh; on_delete; on_move; edit_mode; focused_row_key } ->
+         clear_lazy_rows t;
          let focused_row_index =
            Option.bind focused_row_key ~f:(fun focused_row_key ->
              rows
@@ -2498,7 +2568,67 @@ module Renderer = struct
            ~focused_row_key
            ~focused_row_index;
          reconcile_keyed t rows
+       | Lazy_list_node { length; key; row; on_refresh; on_delete; on_move; edit_mode; focused_row_key } ->
+         List.iter t.children ~f:(fun child -> destroy child.mounted);
+         t.children <- [];
+         let focused_row_index = None in
+         let stale_indices =
+           Hashtbl.fold
+             (fun index (cached_key, _mounted) stale_indices ->
+                if index >= length then index :: stale_indices
+                else
+                  let row_key = key index in
+                  if String.equal cached_key row_key then stale_indices else index :: stale_indices)
+             t.lazy_rows
+             []
+         in
+         List.iter stale_indices ~f:(fun index ->
+             match Hashtbl.find_opt t.lazy_rows index with
+             | None -> ()
+             | Some (_key, mounted) ->
+               Hashtbl.remove t.lazy_rows index;
+               destroy mounted);
+         if not (List.is_empty stale_indices) then
+           t.lazy_list_version <- t.lazy_list_version + 1;
+         let render_row index =
+           let row_key = key index in
+           match Hashtbl.find_opt t.lazy_rows index with
+           | Some (cached_key, mounted) when String.equal cached_key row_key ->
+             update mounted (row index);
+             mounted.view
+           | cached ->
+             Option.iter cached ~f:(fun (_cached_key, mounted) -> destroy mounted);
+             let mounted = mount ~schedule_event:t.schedule_event (row index) in
+             Hashtbl.replace t.lazy_rows index (row_key, mounted);
+             mounted.view
+         in
+         let release_row index =
+           match Hashtbl.find_opt t.lazy_rows index with
+           | None -> ()
+           | Some (_key, mounted) ->
+             Hashtbl.remove t.lazy_rows index;
+             destroy mounted
+         in
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         Backend.set_list_behavior
+           t.view
+           ~on_refresh:
+             (Option.map on_refresh ~f:(fun action -> fun () -> t.schedule_event action))
+           ~on_delete:
+             (Option.map on_delete ~f:(fun on_delete ->
+                fun index -> t.schedule_event (on_delete index)))
+           ~on_move:
+             (Option.map on_move ~f:(fun on_move ->
+                fun ~from_index ~to_index ->
+                t.schedule_event (on_move ~from_index ~to_index)))
+           ~edit_mode
+           ~focused_row_key
+           ~focused_row_index;
+         Backend.set_lazy_list_rows t.view ~length ~version:t.lazy_list_version
+           ~render_row ~release_row
        | Movable_rows_node { rows; on_move; edit_mode } ->
+         clear_lazy_rows t;
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          Backend.set_list_behavior
@@ -2901,13 +3031,14 @@ module Renderer = struct
           | Context_menu actions -> Rendered_context_menu actions
           | Frame frame -> Rendered_frame frame
           | Navigation_title title -> Rendered_navigation_title title
-          | Searchable { text; prompt; on_change } ->
-            Rendered_searchable { text; prompt; on_change }
+          | Searchable { text; is_presented; prompt; on_change; on_presented_change } ->
+            Rendered_searchable { text; is_presented; prompt; on_change; on_presented_change }
           | Toolbar items -> Rendered_toolbar items
           | Tap_action { on_click } -> Rendered_tap_action { on_click }
           | On_appear { on_appear } -> Rendered_on_appear { on_appear }
           | Keyboard_dismiss_controls -> Rendered_keyboard_dismiss_controls
           | Scroll_dismisses_keyboard -> Rendered_scroll_dismisses_keyboard
+          | Hide_list_row_separator -> Rendered_hide_list_row_separator
           | Safe_area_inset_bottom { content } ->
             Hash_set.add used index;
             let existing =
@@ -3415,6 +3546,12 @@ module For_testing = struct
       view.list_focused_row_index <- focused_row_index
     ;;
 
+    let set_lazy_list_rows view ~length ~version:_ ~render_row ~release_row:_ =
+      mutate ();
+      view.children <-
+        List.init length (fun index -> Some (string_of_int index), render_row index)
+    ;;
+
     let set_tabs view ~selected ~on_select tabs =
       mutate ();
       view.selected_tab <- Some selected;
@@ -3729,6 +3866,7 @@ module For_testing = struct
       | Rendered_on_appear _ -> "on-appear"
       | Rendered_keyboard_dismiss_controls -> "keyboard-dismiss-controls"
       | Rendered_scroll_dismisses_keyboard -> "scroll-dismisses-keyboard"
+      | Rendered_hide_list_row_separator -> "hide-list-row-separator"
       | Rendered_safe_area_inset_bottom _ -> "safe-area-inset-bottom"
       | Rendered_sheet _ -> "sheet"
       | Rendered_popover _ -> "popover"

@@ -56,6 +56,7 @@ let read_file path =
 
 let swiftui_source_path = "../swiftui/BonsaiNativeSwiftUI.swift"
 let swiftui_backend_source_path = "../swiftui/bonsai_apple_swiftui.ml"
+let apple_source_path = "../src/bonsai_apple.ml"
 
 let test_navigation_value_links_keep_primary_tap_for_link () =
   let source = read_file swiftui_source_path in
@@ -66,6 +67,45 @@ let test_navigation_value_links_keep_primary_tap_for_link () =
      >= 2)
     "both value-based and destination-based NavigationLink labels should suppress \
      nested row actions so the primary tap opens the link"
+;;
+
+let test_navigation_links_render_without_system_link_chrome () =
+  let source = read_file swiftui_source_path in
+  let value_link_start =
+    match
+      substring_index
+        source
+        ~substring:"NavigationLink(value: navigationValue)"
+        ~from:0
+    with
+    | Some index -> index
+    | None -> failwith "value-based NavigationLink branch not found"
+  in
+  let destination_link_start =
+    match substring_index source ~substring:"NavigationLink {" ~from:value_link_start with
+    | Some index -> index
+    | None -> failwith "destination NavigationLink branch not found"
+  in
+  let first_plain_style =
+    match substring_index source ~substring:".buttonStyle(.plain)" ~from:value_link_start with
+    | Some index -> index
+    | None -> failwith "value-based NavigationLink plain style not found"
+  in
+  let second_plain_style =
+    match
+      substring_index source ~substring:".buttonStyle(.plain)" ~from:destination_link_start
+    with
+    | Some index -> index
+    | None -> failwith "destination NavigationLink plain style not found"
+  in
+  require
+    (first_plain_style < destination_link_start)
+    "value-based NavigationLink should use plain button style so inline links do not \
+     show system link chrome";
+  require
+    (second_plain_style > destination_link_start)
+    "destination NavigationLink should use plain button style so inline links do not \
+     show system link chrome"
 ;;
 
 let test_navigation_value_links_do_not_preempt_system_push () =
@@ -125,6 +165,188 @@ let test_compact_sidebar_close_paths_share_swift_animation () =
     (count_substrings source ~substring:"isCompactSidebarOpen = false" = 1)
     "compact sidebar close paths should not mutate isCompactSidebarOpen directly \
      outside its @State initial value"
+;;
+
+let test_native_list_uses_stable_node_identity () =
+  let source = read_file swiftui_source_path in
+  require
+    (not
+       (contains
+          source
+          ~substring:"ForEach(Array(node.children.enumerated()), id: \\.offset)"))
+    "SwiftUI List rows should use the stable BonsaiNativeNode id, not the row offset, \
+     so appending rows does not recycle every row identity";
+  require
+    (not (contains source ~substring:".id(index)"))
+    "SwiftUI List scroll identifiers should use the stable node id instead of the row \
+     offset";
+  require
+    (contains source ~substring:"proxy.scrollTo(targetID)")
+    "focused-row scrolling should target the focused BonsaiNativeNode id"
+;;
+
+let test_list_virtualization_probe_does_not_log_per_row_events () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"list_update reason=")
+    "list virtualization probe should keep summary update logs for device verification";
+  require
+    (not (contains source ~substring:"row_appear list="))
+    "list virtualization probe should not log every row appear event because that makes \
+     scrolling measurements noisy";
+  require
+    (not (contains source ~substring:"row_disappear list="))
+    "list virtualization probe should not log every row disappear event because that \
+     makes scrolling measurements noisy"
+;;
+
+let test_lazy_list_renders_rows_in_testing_backend () =
+  Backend.reset ();
+  let app =
+    App.create (fun _graph ->
+      Apple.lazy_list ~length:3
+        ~key:(fun index -> "row-" ^ string_of_int index)
+        ~row:(fun index -> Apple.text ("Lazy " ^ string_of_int index))
+        ())
+  in
+  App.flush_and_render app;
+  let root =
+    match App.view app with
+    | Some root -> root
+    | None -> failwith "app did not render"
+  in
+  let rendered = Backend.show root in
+  require
+    (contains rendered ~substring:"text=\"Lazy 0\"")
+    "testing backend should materialize lazy list rows for assertions";
+  require
+    (contains rendered ~substring:"text=\"Lazy 2\"")
+    "testing backend should render all lazy list rows"
+;;
+
+let test_lazy_list_patches_cached_rows () =
+  Backend.reset ();
+  let app =
+    App.create (fun graph ->
+      let count, set_count = Apple.state graph ~key:"count" 0 in
+      Apple.vstack
+        [
+          Apple.lazy_list ~length:1 ~key:(fun _ -> "stable-row")
+            ~row:(fun _ -> Apple.text ("Lazy " ^ string_of_int count))
+            ();
+          Apple.button "Increment" ~on_click:(set_count (count + 1));
+        ])
+  in
+  App.flush_and_render app;
+  let root =
+    match App.view app with
+    | Some root -> root
+    | None -> failwith "app did not render"
+  in
+  require
+    (String.equal (Backend.find_text_exn root ~path:[ 0; 0 ]) "Lazy 0")
+    "initial lazy row should render state";
+  Backend.click_exn root ~path:[ 1 ];
+  require
+    (String.equal (Backend.find_text_exn root ~path:[ 0; 0 ]) "Lazy 1")
+    "cached lazy row should patch when state changes"
+;;
+
+let test_lazy_list_renderer_uses_indexed_keys () =
+  let source = read_file apple_source_path in
+  require
+    (not (contains source ~substring:"duplicate Apple lazy_list key"))
+    "lazy list construction should not eagerly scan every key; keys are validated only for \
+     materialized rows";
+  require
+    (not (contains source ~substring:"Array.init length key"))
+    "lazy list renderer should not eagerly allocate keys for every row"
+  ;
+  require
+    (not (contains source ~substring:"List.init length key"))
+    "lazy list fingerprint should not call the row key callback for every row";
+  require
+    (not (contains source ~substring:"if index >= length then None"))
+    "lazy list focus handling should not scan every row key to find a focused row"
+;;
+
+let test_swiftui_lazy_list_uses_native_row_provider () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"lazyListProviderId")
+    "SwiftUI backend should store a native lazy list provider id";
+  require
+    (contains source ~substring:"lazyListRowCount")
+    "SwiftUI backend should store only the lazy list row count";
+  require
+    (not (contains source ~substring:"lazyListRowKeys"))
+    "SwiftUI backend should not store every lazy row key because that scales with the \
+     entire list";
+  require
+    (contains source ~substring:"bonsaiNativeLazyRowRenderCallback?(providerId, Int32(index))")
+    "SwiftUI lazy list rows should be rendered through the provider on demand";
+  require
+    (contains source ~substring:"bonsaiNativeLazyRowReleaseCallback?")
+    "SwiftUI lazy list rows should release cached OCaml rows on disappear"
+;;
+
+let test_swiftui_lazy_list_loads_rows_on_appear () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"BonsaiNativeLazyListRowView(")
+    "SwiftUI lazy lists should use a row wrapper so ForEach can stay lightweight";
+  require
+    (contains source ~substring:"private func loadRow()")
+    "SwiftUI lazy list rows should construct OCaml rows from onAppear";
+  require
+    (contains source ~substring:"loadRow()")
+    "SwiftUI lazy list row construction should happen in onAppear so the row does not \
+     display a blank placeholder first";
+  require
+    (contains source ~substring:"DispatchQueue.main.async")
+    "SwiftUI lazy list row release should be deferred so disappearing rows cannot re-enter \
+     OCaml during a render pass";
+  require
+    (not
+       (contains source ~substring:"if let child = renderLazyListRow(providerId:"))
+    "SwiftUI lazy lists should not call the OCaml row provider directly inside the \
+     ForEach body because SwiftUI may evaluate off-screen rows"
+;;
+
+let test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"lazyListVersion")
+    "SwiftUI lazy lists should publish a version each time OCaml updates the row provider";
+  require
+    (contains source ~substring:"version: node.lazyListVersion")
+    "SwiftUI lazy rows should receive the provider version so visible rows can refresh";
+  require
+    (contains source ~substring:".onChange(of: version)")
+    "SwiftUI lazy rows should refresh when OCaml updates the provider, even if the row \
+     index and key are unchanged";
+  require
+    (contains source ~substring:"private func refreshRow()")
+    "SwiftUI lazy rows should call the OCaml row provider again for visible cached rows";
+  require
+    (contains source ~substring:"node.lazyListVersion = Int(version)")
+    "SwiftUI lazy list provider updates should use the OCaml renderer's version instead \
+     of bumping on every append";
+  require
+    (not (contains source ~substring:"node.lazyListVersion &+= 1"))
+    "SwiftUI lazy list provider updates should not refresh visible rows for pure append \
+     updates"
+;;
+
+let test_swiftui_lazy_list_retained_cache_stays_small () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"let maxRetainedRows = 32")
+    "SwiftUI lazy lists should retain only a few screens of off-screen rows so long \
+     blocks feeds do not keep heating up and growing memory";
+  require
+    (not (contains source ~substring:"let maxRetainedRows = 80"))
+    "SwiftUI lazy list retained cache should not keep the old high row bound"
 ;;
 
 let counter graph =
@@ -611,6 +833,25 @@ let test_button_label_renders_custom_clickable_content () =
   require
     (contains (Backend.show root) ~substring:" disabled")
     "click should run the button action"
+;;
+
+let test_hide_list_row_separator_modifier_renders () =
+  Backend.reset ();
+  let app =
+    App.create (fun _graph ->
+      Apple.list [ "row" ]
+        ~key:(fun value -> value)
+        ~row:(fun value -> Apple.text value |> Apple.hide_list_row_separator))
+  in
+  App.flush_and_render app;
+  let root =
+    match App.view app with
+    | Some root -> root
+    | None -> failwith "app did not render"
+  in
+  require
+    (contains (Backend.show root) ~substring:"hide-list-row-separator")
+    "row separator visibility should be exposed as a render modifier"
 ;;
 
 let test_text_field_delete_backward_at_start_event () =
@@ -1224,7 +1465,7 @@ let test_focused_row_scroll_keeps_row_visible_without_centering () =
     (not (contains source ~substring:"proxy.scrollTo(index, anchor: .center)"))
     "focused row scrolling should keep the row visible without forcing it to the center";
   require
-    (contains source ~substring:"proxy.scrollTo(index)")
+    (contains source ~substring:"proxy.scrollTo(targetID)")
     "focused row scrolling should let SwiftUI choose the minimal scroll needed to reveal it"
 ;;
 
@@ -1243,10 +1484,21 @@ let () =
   test_sheet_content_host_preserves_leading_content_alignment ();
   test_custom_label_buttons_use_full_label_hit_target ();
   test_navigation_value_links_do_not_preempt_system_push ();
+  test_navigation_links_render_without_system_link_chrome ();
   test_compact_sidebar_close_paths_share_swift_animation ();
+  test_native_list_uses_stable_node_identity ();
+  test_list_virtualization_probe_does_not_log_per_row_events ();
+  test_lazy_list_renders_rows_in_testing_backend ();
+  test_lazy_list_patches_cached_rows ();
+  test_lazy_list_renderer_uses_indexed_keys ();
+  test_swiftui_lazy_list_uses_native_row_provider ();
+  test_swiftui_lazy_list_loads_rows_on_appear ();
+  test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update ();
+  test_swiftui_lazy_list_retained_cache_stays_small ();
   test_navigation_value_links_keep_primary_tap_for_link ();
   test_image_semantic_color_renders ();
   test_button_label_renders_custom_clickable_content ();
+  test_hide_list_row_separator_modifier_renders ();
   test_text_field_delete_backward_at_start_event ();
   test_text_field_focus_renders ();
   test_text_field_native_clear_button_renders_and_clears ();

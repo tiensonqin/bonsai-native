@@ -11,6 +11,12 @@
 #include <dispatch/dispatch.h>
 
 typedef void (*bonsai_native_event_callback)(int32_t event_id, const char *text);
+typedef void *(*bonsai_native_lazy_row_render_callback)(
+  int32_t provider_id,
+  int32_t index);
+typedef void (*bonsai_native_lazy_row_release_callback)(
+  int32_t provider_id,
+  int32_t index);
 typedef void (*bonsai_native_http_callback)(
   void *context,
   bool success,
@@ -35,6 +41,7 @@ extern void bonsai_native_swiftui_set_button_style(void *node, int32_t style);
 extern void bonsai_native_swiftui_set_title_visible(void *node, bool is_visible);
 extern void bonsai_native_swiftui_set_keyboard_dismiss_controls(void *node, bool is_enabled);
 extern void bonsai_native_swiftui_set_scroll_dismisses_keyboard(void *node, bool is_enabled);
+extern void bonsai_native_swiftui_set_hide_list_row_separator(void *node, bool is_hidden);
 extern void bonsai_native_swiftui_set_image_source(void *node, int32_t source);
 extern void bonsai_native_swiftui_set_image_color(void *node, int32_t color);
 extern void bonsai_native_swiftui_set_image_style(
@@ -63,6 +70,15 @@ extern void bonsai_native_swiftui_set_progress(void *node, double value);
 extern void bonsai_native_swiftui_set_spacing(void *node, double spacing);
 extern void bonsai_native_swiftui_set_grid(void *node, int32_t columns, double spacing);
 extern void bonsai_native_swiftui_set_children(void *node, void **children, int32_t count);
+extern void bonsai_native_swiftui_set_lazy_list_rows(
+  void *node,
+  int32_t provider_id,
+  int32_t count,
+  int32_t version);
+extern void bonsai_native_swiftui_clear_lazy_list_rows(void *node);
+extern void bonsai_native_swiftui_register_lazy_list_callbacks(
+  bonsai_native_lazy_row_render_callback render_callback,
+  bonsai_native_lazy_row_release_callback release_callback);
 extern void bonsai_native_swiftui_set_list_behavior(
   void *node,
   int32_t refresh_event_id,
@@ -134,7 +150,10 @@ extern void bonsai_native_swiftui_set_searchable(
   void *node,
   int32_t event_id,
   const char *text,
-  const char *prompt);
+  const char *prompt,
+  bool has_presentation,
+  bool is_presented,
+  int32_t presentation_event_id);
 extern void bonsai_native_swiftui_set_sheet(
   void *node,
   void *content,
@@ -393,6 +412,8 @@ extern void bonsai_native_swiftui_http_send_json(
 
 static value *event_callback = NULL;
 static value *launch_callback = NULL;
+static value *lazy_row_render_callback = NULL;
+static value *lazy_row_release_callback = NULL;
 
 struct bonsai_main_callback {
   value callback;
@@ -402,6 +423,7 @@ struct bonsai_http_context {
   value *callback;
 };
 
+static void *pointer_val(value raw_value);
 static value value_of_pointer(void *pointer);
 
 static void run_ocaml_callback_on_main(void *context)
@@ -438,6 +460,42 @@ static void swiftui_event_callback(int32_t event_id, const char *text)
   CAMLlocal2(text_value, result);
   text_value = text == NULL ? Val_none : caml_alloc_some(caml_copy_string(text));
   result = caml_callback2_exn(*event_callback, Val_int(event_id), text_value);
+  (void)result;
+  CAMLdrop;
+  caml_release_runtime_system();
+}
+
+static void *swiftui_lazy_row_render_callback(int32_t provider_id, int32_t index)
+{
+  if (lazy_row_render_callback == NULL) {
+    return NULL;
+  }
+
+  void *row = NULL;
+  caml_acquire_runtime_system();
+  CAMLparam0();
+  CAMLlocal1(result);
+  result =
+    caml_callback2_exn(*lazy_row_render_callback, Val_int(provider_id), Val_int(index));
+  if (!Is_exception_result(result)) {
+    row = pointer_val(result);
+  }
+  CAMLdrop;
+  caml_release_runtime_system();
+  return row;
+}
+
+static void swiftui_lazy_row_release_callback(int32_t provider_id, int32_t index)
+{
+  if (lazy_row_release_callback == NULL) {
+    return;
+  }
+
+  caml_acquire_runtime_system();
+  CAMLparam0();
+  CAMLlocal1(result);
+  result =
+    caml_callback2_exn(*lazy_row_release_callback, Val_int(provider_id), Val_int(index));
   (void)result;
   CAMLdrop;
   caml_release_runtime_system();
@@ -511,6 +569,33 @@ CAMLprim value bonsai_apple_swiftui_register_event_callback(value callback)
   } else {
     caml_modify_generational_global_root(event_callback, callback);
   }
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_register_lazy_list_callbacks(
+  value render_callback,
+  value release_callback)
+{
+  CAMLparam2(render_callback, release_callback);
+  if (lazy_row_render_callback == NULL) {
+    lazy_row_render_callback = caml_stat_alloc(sizeof(value));
+    *lazy_row_render_callback = render_callback;
+    caml_register_generational_global_root(lazy_row_render_callback);
+  } else {
+    caml_modify_generational_global_root(lazy_row_render_callback, render_callback);
+  }
+
+  if (lazy_row_release_callback == NULL) {
+    lazy_row_release_callback = caml_stat_alloc(sizeof(value));
+    *lazy_row_release_callback = release_callback;
+    caml_register_generational_global_root(lazy_row_release_callback);
+  } else {
+    caml_modify_generational_global_root(lazy_row_release_callback, release_callback);
+  }
+
+  bonsai_native_swiftui_register_lazy_list_callbacks(
+    swiftui_lazy_row_render_callback,
+    swiftui_lazy_row_release_callback);
   CAMLreturn(Val_unit);
 }
 
@@ -668,6 +753,15 @@ CAMLprim value bonsai_apple_swiftui_set_scroll_dismisses_keyboard(value node, va
   bonsai_native_swiftui_set_scroll_dismisses_keyboard(
     pointer_val(node),
     Bool_val(is_enabled));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_hide_list_row_separator(value node, value is_hidden)
+{
+  CAMLparam2(node, is_hidden);
+  bonsai_native_swiftui_set_hide_list_row_separator(
+    pointer_val(node),
+    Bool_val(is_hidden));
   CAMLreturn(Val_unit);
 }
 
@@ -831,6 +925,29 @@ CAMLprim value bonsai_apple_swiftui_set_children(value node, value children)
   if (child_pointers != NULL) {
     caml_stat_free(child_pointers);
   }
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_lazy_list_rows(
+  value node,
+  value provider_id,
+  value count,
+  value version)
+{
+  CAMLparam4(node, provider_id, count, version);
+
+  bonsai_native_swiftui_set_lazy_list_rows(
+    pointer_val(node),
+    Int_val(provider_id),
+    (int32_t)Int_val(count),
+    (int32_t)Int_val(version));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_clear_lazy_list_rows(value node)
+{
+  CAMLparam1(node);
+  bonsai_native_swiftui_clear_lazy_list_rows(pointer_val(node));
   CAMLreturn(Val_unit);
 }
 
@@ -1080,21 +1197,37 @@ CAMLprim value bonsai_apple_swiftui_append_context_menu_action(
   CAMLreturn(Val_unit);
 }
 
-CAMLprim value bonsai_apple_swiftui_set_searchable(value node, value event_id, value text, value prompt)
+CAMLprim value bonsai_apple_swiftui_set_searchable(
+  value node,
+  value event_id,
+  value text,
+  value prompt,
+  value presentation)
 {
-  CAMLparam4(node, event_id, text, prompt);
+  CAMLparam5(node, event_id, text, prompt, presentation);
+  bool has_presentation = !Is_none(presentation);
+  bool is_presented = false;
+  int32_t presentation_event_id = -1;
+  if (has_presentation) {
+    value presentation_value = Some_val(presentation);
+    is_presented = Bool_val(Field(presentation_value, 0));
+    presentation_event_id = Int_val(Field(presentation_value, 1));
+  }
   bonsai_native_swiftui_set_searchable(
     pointer_val(node),
     Int_val(event_id),
     String_val(text),
-    Is_none(prompt) ? NULL : String_val(Some_val(prompt)));
+    Is_none(prompt) ? NULL : String_val(Some_val(prompt)),
+    has_presentation,
+    is_presented,
+    presentation_event_id);
   CAMLreturn(Val_unit);
 }
 
 CAMLprim value bonsai_apple_swiftui_clear_searchable(value node)
 {
   CAMLparam1(node);
-  bonsai_native_swiftui_set_searchable(pointer_val(node), -1, "", NULL);
+  bonsai_native_swiftui_set_searchable(pointer_val(node), -1, "", NULL, false, false, -1);
   CAMLreturn(Val_unit);
 }
 
@@ -2044,8 +2177,12 @@ CAMLprim value bonsai_apple_swiftui_release_controller(value controller)
 CAMLprim value bonsai_apple_swiftui_make_window(value root)
 {
   CAMLparam1(root);
-  CAMLreturn(value_of_pointer(
-    bonsai_native_swiftui_make_window(pointer_val(root), swiftui_event_callback)));
+  void *root_pointer = pointer_val(root);
+  caml_release_runtime_system();
+  void *window =
+    bonsai_native_swiftui_make_window(root_pointer, swiftui_event_callback);
+  caml_acquire_runtime_system();
+  CAMLreturn(value_of_pointer(window));
 }
 
 CAMLprim value bonsai_apple_swiftui_release_window(value window)
