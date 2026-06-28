@@ -1223,7 +1223,12 @@ private struct BonsaiNativeImageView: View {
                 .overlay {
                   ProgressView()
                 }
-                .frame(maxWidth: .infinity, maxHeight: node.imageMaxHeight, alignment: .leading)
+                .frame(
+                  maxWidth: .infinity,
+                  minHeight: node.imageMaxHeight,
+                  maxHeight: node.imageMaxHeight,
+                  alignment: .leading
+                )
             case let .success(image):
               styledFileImage(image.resizable().scaledToFit())
             case .failure:
@@ -1233,7 +1238,12 @@ private struct BonsaiNativeImageView: View {
                   Image(systemName: "photo")
                     .foregroundStyle(.secondary)
                 }
-                .frame(maxWidth: .infinity, maxHeight: node.imageMaxHeight, alignment: .leading)
+                .frame(
+                  maxWidth: .infinity,
+                  minHeight: node.imageMaxHeight,
+                  maxHeight: node.imageMaxHeight,
+                  alignment: .leading
+                )
             @unknown default:
               EmptyView()
             }
@@ -1261,7 +1271,13 @@ private struct BonsaiNativeImageView: View {
   private func styledFileImage<Content: View>(_ image: Content) -> some View {
     if node.imageMaxHeight != nil || node.imageCornerRadius != nil {
       image
-        .frame(maxWidth: .infinity, maxHeight: node.imageMaxHeight, alignment: .leading)
+        .frame(
+          maxWidth: .infinity,
+          minHeight: node.imageMaxHeight,
+          maxHeight: node.imageMaxHeight,
+          alignment: .center
+        )
+        .clipped()
         .clipShape(.rect(cornerRadius: node.imageCornerRadius ?? 0, style: .continuous))
     } else {
       image

@@ -1488,6 +1488,14 @@ let test_swiftui_image_view_supports_remote_urls () =
     "SwiftUI file image nodes should render remote image URLs with AsyncImage"
 ;;
 
+let test_swiftui_image_view_reserves_requested_height_before_load () =
+  let source = read_file swiftui_source_path in
+  require
+    (count_substrings source ~substring:"minHeight: node.imageMaxHeight" >= 3)
+    "SwiftUI image views should reserve the requested image height before and after \
+     loading so rows do not change height while scrolling"
+;;
+
 let test_swiftui_custom_view_supports_youtube_webkit_iframes () =
   let source = read_file swiftui_source_path in
   require (contains source ~substring:"import WebKit") "YouTube iframes should use WebKit";
@@ -1902,6 +1910,7 @@ let () =
   test_frame_renders_max_width ();
   test_file_image_can_render_swift_image_file_style ();
   test_swiftui_image_view_supports_remote_urls ();
+  test_swiftui_image_view_reserves_requested_height_before_load ();
   test_swiftui_custom_view_supports_youtube_webkit_iframes ();
   test_youtube_iframe_does_not_steal_list_row_gestures ();
   test_swiftui_prefers_inter_for_typography ();
