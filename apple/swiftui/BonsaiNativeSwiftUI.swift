@@ -8,6 +8,7 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 import Vision
+import WebKit
 
 public typealias BonsaiNativeEventCallback = @convention(c) (Int32, UnsafePointer<CChar>?) -> Void
 public typealias BonsaiNativeLazyRowRenderCallback =
@@ -973,16 +974,33 @@ private struct BonsaiNativeImageView: View {
   @ObservedObject var node: BonsaiNativeNode
 
   var body: some View {
-    if node.imageSource == 1, let image = UIImage(contentsOfFile: node.text) {
-      let fileImage = Image(uiImage: image)
-        .resizable()
-        .scaledToFit()
-      if node.imageMaxHeight != nil || node.imageCornerRadius != nil {
-        fileImage
-          .frame(maxWidth: .infinity, maxHeight: node.imageMaxHeight, alignment: .leading)
-          .clipShape(.rect(cornerRadius: node.imageCornerRadius ?? 0, style: .continuous))
-      } else {
-        fileImage
+    if node.imageSource == 1 {
+      if let url = remoteImageURL(node.text) {
+        AsyncImage(url: url) { phase in
+          switch phase {
+          case .empty:
+            RoundedRectangle(cornerRadius: node.imageCornerRadius ?? 0, style: .continuous)
+              .fill(.secondary.opacity(0.12))
+              .overlay {
+                ProgressView()
+              }
+              .frame(maxWidth: .infinity, maxHeight: node.imageMaxHeight, alignment: .leading)
+          case let .success(image):
+            styledFileImage(image.resizable().scaledToFit())
+          case .failure:
+            RoundedRectangle(cornerRadius: node.imageCornerRadius ?? 0, style: .continuous)
+              .fill(.secondary.opacity(0.12))
+              .overlay {
+                Image(systemName: "photo")
+                  .foregroundStyle(.secondary)
+              }
+              .frame(maxWidth: .infinity, maxHeight: node.imageMaxHeight, alignment: .leading)
+          @unknown default:
+            EmptyView()
+          }
+        }
+      } else if let image = UIImage(contentsOfFile: node.text) {
+        styledFileImage(Image(uiImage: image).resizable().scaledToFit())
       }
     } else {
       let image = Image(systemName: node.text)
@@ -993,6 +1011,124 @@ private struct BonsaiNativeImageView: View {
       }
     }
   }
+
+  @ViewBuilder
+  private func styledFileImage<Content: View>(_ image: Content) -> some View {
+    if node.imageMaxHeight != nil || node.imageCornerRadius != nil {
+      image
+        .frame(maxWidth: .infinity, maxHeight: node.imageMaxHeight, alignment: .leading)
+        .clipShape(.rect(cornerRadius: node.imageCornerRadius ?? 0, style: .continuous))
+    } else {
+      image
+    }
+  }
+
+  private func remoteImageURL(_ value: String) -> URL? {
+    guard let url = URL(string: value), let scheme = url.scheme?.lowercased() else {
+      return nil
+    }
+    return scheme == "http" || scheme == "https" ? url : nil
+  }
+}
+
+private struct BonsaiNativeYouTubeIframeView: UIViewRepresentable {
+  let payload: String
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator()
+  }
+
+  func makeUIView(context: Context) -> WKWebView {
+    let configuration = WKWebViewConfiguration()
+    configuration.allowsInlineMediaPlayback = true
+    let webView = WKWebView(frame: .zero, configuration: configuration)
+    webView.scrollView.isScrollEnabled = false
+    webView.scrollView.backgroundColor = .clear
+    webView.isOpaque = false
+    webView.backgroundColor = .clear
+    load(webView, context: context)
+    return webView
+  }
+
+  func updateUIView(_ webView: WKWebView, context: Context) {
+    if context.coordinator.lastPayload != payload {
+      load(webView, context: context)
+    }
+  }
+
+  private func load(_ webView: WKWebView, context: Context) {
+    context.coordinator.lastPayload = payload
+    webView.loadHTMLString(youtubeHTML(payload: payload), baseURL: nil)
+  }
+
+  final class Coordinator {
+    var lastPayload: String?
+  }
+}
+
+private func youtubePayload(from kind: String) -> String? {
+  if kind.hasPrefix("youtube:") {
+    return String(kind.dropFirst("youtube:".count))
+  }
+  if kind.hasPrefix("youtube-iframe:") {
+    return String(kind.dropFirst("youtube-iframe:".count))
+  }
+  return nil
+}
+
+private func youtubeHTML(payload: String) -> String {
+  guard let embedURL = youtubeEmbedURL(payload: payload) else {
+    return "<html><body></body></html>"
+  }
+  return """
+  <html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <style>
+      html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+      iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 12px; }
+    </style>
+  </head>
+  <body>
+    <iframe src="\(embedURL.absoluteString)" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+  </body>
+  </html>
+  """
+}
+
+private func youtubeEmbedURL(payload: String) -> URL? {
+  let value = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+  let videoID: String?
+  if let url = URL(string: value), let host = url.host?.lowercased() {
+    let normalizedHost = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    if normalizedHost == "youtu.be" {
+      videoID = url.pathComponents.dropFirst().first
+    } else if normalizedHost == "youtube.com" || normalizedHost == "m.youtube.com" {
+      if url.pathComponents.count >= 3, url.pathComponents[1] == "embed" {
+        videoID = url.pathComponents[2]
+      } else {
+        videoID = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+          .queryItems?
+          .first(where: { $0.name == "v" })?
+          .value
+      }
+    } else {
+      videoID = nil
+    }
+  } else {
+    videoID = value
+  }
+  guard let videoID = videoID, isValidYouTubeVideoID(videoID) else {
+    return nil
+  }
+  return URL(string: "https://www.youtube.com/embed/\(videoID)?playsinline=1&rel=0")
+}
+
+private func isValidYouTubeVideoID(_ value: String) -> Bool {
+  !value.isEmpty
+    && value.allSatisfy { character in
+      character.isLetter || character.isNumber || character == "_" || character == "-"
+    }
 }
 
 private struct BonsaiNativeRootView: View {
@@ -2175,6 +2311,8 @@ private struct BonsaiNativeNodeView: View {
     case .customView:
       if node.text == "congrats-effect" {
         BonsaiNativeCongratsEffectView()
+      } else if let payload = youtubePayload(from: node.text) {
+        BonsaiNativeYouTubeIframeView(payload: payload)
       } else {
         Text(node.text)
           .foregroundStyle(.secondary)

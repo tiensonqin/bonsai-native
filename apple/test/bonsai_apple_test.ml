@@ -1290,6 +1290,27 @@ let test_file_image_can_render_swift_image_file_style () =
     "file images should expose Swift image file sizing and clipping"
 ;;
 
+let test_swiftui_image_view_supports_remote_urls () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"AsyncImage(url:")
+    "SwiftUI file image nodes should render remote image URLs with AsyncImage"
+;;
+
+let test_swiftui_custom_view_supports_youtube_webkit_iframes () =
+  let source = read_file swiftui_source_path in
+  require (contains source ~substring:"import WebKit") "YouTube iframes should use WebKit";
+  require
+    (contains source ~substring:"BonsaiNativeYouTubeIframeView")
+    "custom youtube views should render through a dedicated WebKit view";
+  require
+    (contains source ~substring:"WKWebView")
+    "custom youtube views should be backed by WKWebView";
+  require
+    (contains source ~substring:"youtubePayload")
+    "custom views should recognize youtube payloads by kind"
+;;
+
 let test_keyboard_dismiss_controls_renders () =
   Backend.reset ();
   let component _graph =
@@ -1644,6 +1665,8 @@ let () =
   test_plain_text_field_renders_plain_style ();
   test_frame_renders_max_width ();
   test_file_image_can_render_swift_image_file_style ();
+  test_swiftui_image_view_supports_remote_urls ();
+  test_swiftui_custom_view_supports_youtube_webkit_iframes ();
   test_keyboard_dismiss_controls_renders ();
   test_scroll_dismisses_keyboard_renders ();
   test_secondary_fill_panel_renders ();
