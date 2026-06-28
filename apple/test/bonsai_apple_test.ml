@@ -316,9 +316,8 @@ let test_lazy_list_renderer_uses_indexed_keys () =
     "lazy list renderer should keep the displaced row cached so adjacent moved rows are \
      reused instead of remounted";
   require
-    (contains source ~substring:"(displaced_key, displaced_mounted)")
-    "lazy list renderer should preserve the displaced row's mounted value when rekeying \
-     moved rows";
+    (contains source ~substring:"Hashtbl.replace t.lazy_rows cached_index\n                        displaced")
+    "lazy list renderer should preserve the displaced row record when rekeying moved rows";
   require
     (not (contains source ~substring:"if index >= length then None"))
     "lazy list focus handling should not scan every row key to find a focused row"
@@ -406,7 +405,7 @@ let test_swiftui_lazy_list_move_updates_visible_order_immediately () =
     (contains source ~substring:"@State private var lazyListMovePreview")
     "the move preview should be view-local state rather than rebuilding OCaml rows";
   require
-    (contains source ~substring:"BonsaiNativeLazyListRowSlots(count: node.lazyListRowCount, movePreview: lazyListMovePreview)")
+    (contains source ~substring:"BonsaiNativeLazyListRowSlots(")
     "lazy provider List rows should be driven by a lightweight slot collection";
   require
     (contains source ~substring:"lazyListMovePreview =\n      BonsaiNativeLazyListMovePreview")
@@ -467,8 +466,8 @@ let test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update () =
     (contains source ~substring:"version: node.lazyListVersion")
     "SwiftUI lazy rows should receive the provider version so visible rows can refresh";
   require
-    (contains source ~substring:"key: \"\\(index)\"")
-    "SwiftUI lazy row cache identity should stay stable across provider updates";
+    (contains source ~substring:"key: slot.key")
+    "SwiftUI lazy row cache identity should use the stable provider row key";
   require
     (not (contains source ~substring:"key: \"\\(node.lazyListVersion):\\(index)\""))
     "global provider version should not be part of every row key because append-only \
@@ -547,6 +546,25 @@ let test_swiftui_lazy_list_logs_ui_row_lifecycle_counts () =
     (contains source ~substring:"media_view_live=")
     "list_perf logs should include live media view count because WebKit/image rows can \
      leak separately from text rows"
+;;
+
+let test_swiftui_lazy_list_uses_stable_row_keys_for_identity () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"bonsaiNativeLazyRowKeyCallback")
+    "lazy provider lists should expose the OCaml row key to SwiftUI";
+  require
+    (contains source ~substring:"let key: String")
+    "lazy provider row slots should carry the stable row key";
+  require
+    (contains source ~substring:"var id: String")
+    "lazy provider row slots should use the stable row key as SwiftUI identity";
+  require
+    (not (contains source ~substring:"var id: Int"))
+    "lazy provider row slots should not use the source index as SwiftUI identity";
+  require
+    (not (contains source ~substring:"key: \"\\(index)\""))
+    "lazy provider row cache keys should not be derived from the mutable row index"
 ;;
 
 let test_swiftui_lazy_list_disappear_defers_detach_without_releasing_cache () =
@@ -1896,6 +1914,7 @@ let () =
   test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update ();
   test_swiftui_lazy_list_retained_cache_stays_small ();
   test_swiftui_lazy_list_logs_ui_row_lifecycle_counts ();
+  test_swiftui_lazy_list_uses_stable_row_keys_for_identity ();
   test_swiftui_lazy_list_disappear_defers_detach_without_releasing_cache ();
   test_swiftui_lazy_list_blurs_focused_row_after_disappear ();
   test_swiftui_lazy_list_setters_skip_unchanged_published_values ();

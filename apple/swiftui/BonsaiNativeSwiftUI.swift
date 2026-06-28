@@ -14,6 +14,8 @@ import WebKit
 public typealias BonsaiNativeEventCallback = @convention(c) (Int32, UnsafePointer<CChar>?) -> Void
 public typealias BonsaiNativeLazyRowRenderCallback =
   @convention(c) (Int32, Int32) -> UnsafeMutableRawPointer?
+public typealias BonsaiNativeLazyRowKeyCallback =
+  @convention(c) (Int32, Int32) -> UnsafeMutablePointer<CChar>?
 public typealias BonsaiNativeLazyRowReleaseCallback =
   @convention(c) (Int32, Int32) -> Void
 public typealias BonsaiNativeHTTPCallback =
@@ -22,6 +24,7 @@ public typealias BonsaiNativeLaunchCallback =
   @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> Bool
 
 private var bonsaiNativeLazyRowRenderCallback: BonsaiNativeLazyRowRenderCallback?
+private var bonsaiNativeLazyRowKeyCallback: BonsaiNativeLazyRowKeyCallback?
 private var bonsaiNativeLazyRowReleaseCallback: BonsaiNativeLazyRowReleaseCallback?
 
 @_cdecl("bonsai_native_swiftui_set_clipboard_text")
@@ -796,6 +799,14 @@ private final class BonsaiNativeScrollStressProbe {
 
   private let isEnabled =
     ProcessInfo.processInfo.environment["BONSAI_NATIVE_SCROLL_STRESS"] == "1"
+  private let step =
+    max(1, Int(ProcessInfo.processInfo.environment["BONSAI_NATIVE_SCROLL_STRESS_STEP"] ?? "") ?? 3)
+  private let delay =
+    max(
+      0.016,
+      Double(ProcessInfo.processInfo.environment["BONSAI_NATIVE_SCROLL_STRESS_DELAY"] ?? "")
+        ?? 0.05
+    )
   private final class Run {
     var totalRows: Int
     let scrollToIndex: (Int) -> Void
@@ -824,7 +835,7 @@ private final class BonsaiNativeScrollStressProbe {
     index: Int,
     direction: Int
   ) {
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
       guard let run = self.runningLists[listID] else { return }
       let totalRows = run.totalRows
       guard totalRows > 0 else { return }
@@ -843,7 +854,7 @@ private final class BonsaiNativeScrollStressProbe {
       } else {
         nextDirection = direction
       }
-      let nextIndex = boundedIndex + (nextDirection * 20)
+      let nextIndex = boundedIndex + (nextDirection * self.step)
       self.run(
         listID: listID,
         index: nextIndex,
@@ -1467,9 +1478,10 @@ private struct BonsaiNativeLazyListMovePreview: Equatable {
 private struct BonsaiNativeLazyListRowSlot: Identifiable {
   let position: Int
   let sourceIndex: Int
+  let key: String
 
-  var id: Int {
-    sourceIndex
+  var id: String {
+    key
   }
 }
 
@@ -1478,15 +1490,18 @@ private struct BonsaiNativeLazyListRowSlots: RandomAccessCollection {
   typealias Element = BonsaiNativeLazyListRowSlot
 
   let count: Int
+  let providerId: Int32
   let movePreview: BonsaiNativeLazyListMovePreview?
 
   var startIndex: Int { 0 }
   var endIndex: Int { count }
 
   subscript(position: Int) -> BonsaiNativeLazyListRowSlot {
-    BonsaiNativeLazyListRowSlot(
+    let sourceIndex = movePreview?.sourceIndex(for: position) ?? position
+    return BonsaiNativeLazyListRowSlot(
       position: position,
-      sourceIndex: movePreview?.sourceIndex(for: position) ?? position
+      sourceIndex: sourceIndex,
+      key: bonsaiNativeLazyRowKey(providerId: providerId, index: sourceIndex)
     )
   }
 }
@@ -2806,10 +2821,14 @@ private struct BonsaiNativeNodeView: View {
   private func nativeListRows() -> some View {
     if let providerId = node.lazyListProviderId {
       let slots =
-        BonsaiNativeLazyListRowSlots(count: node.lazyListRowCount, movePreview: lazyListMovePreview)
+        BonsaiNativeLazyListRowSlots(
+          count: node.lazyListRowCount,
+          providerId: providerId,
+          movePreview: lazyListMovePreview
+        )
       let _ = logVisibleLazySlots(slots)
       ForEach(slots) { slot in
-        lazyListRow(providerId: providerId, index: slot.sourceIndex)
+        lazyListRow(providerId: providerId, index: slot.sourceIndex, key: slot.key)
       }
         .onDelete { offsets in
           guard let index = offsets.first else { return }
@@ -2861,16 +2880,25 @@ private struct BonsaiNativeNodeView: View {
 
   private func lazyListRows(providerId: Int32) -> some View {
     ForEach(0..<node.lazyListRowCount, id: \.self) { index in
-      lazyListRow(providerId: providerId, index: index)
+      lazyListRow(
+        providerId: providerId,
+        index: index,
+        key: bonsaiNativeLazyRowKey(providerId: providerId, index: index)
+      )
     }
   }
 
   private func moveLazyListRows(source: IndexSet, destination: Int) {
+    guard let providerId = node.lazyListProviderId else { return }
     guard let fromPosition = source.first else { return }
     guard fromPosition >= 0 && fromPosition < node.lazyListRowCount else { return }
     let toOffset = min(max(0, destination), node.lazyListRowCount)
     let slots =
-      BonsaiNativeLazyListRowSlots(count: node.lazyListRowCount, movePreview: lazyListMovePreview)
+      BonsaiNativeLazyListRowSlots(
+        count: node.lazyListRowCount,
+        providerId: providerId,
+        movePreview: lazyListMovePreview
+      )
     let fromIndex = slots[fromPosition].sourceIndex
     BonsaiNativeListVirtualizationProbe.shared.debug(
       "lazy_move_preview_set list=\(node.id.uuidString) from_position=\(fromPosition) from_index=\(fromIndex) to_offset=\(toOffset) rows=\(node.lazyListRowCount) version=\(node.lazyListVersion)"
@@ -2924,11 +2952,11 @@ private struct BonsaiNativeNodeView: View {
     )
   }
 
-  private func lazyListRow(providerId: Int32, index: Int) -> some View {
+  private func lazyListRow(providerId: Int32, index: Int, key: String) -> some View {
     BonsaiNativeLazyListRowView(
       providerId: providerId,
       index: index,
-      key: "\(index)",
+      key: key,
       version: node.lazyListVersion,
       owner: node,
       listID: node.id,
@@ -2962,7 +2990,8 @@ private struct BonsaiNativeNodeView: View {
     let targetID: AnyHashable
     if node.lazyListProviderId != nil {
       guard index >= 0 && index < node.lazyListRowCount else { return }
-      targetID = AnyHashable(index)
+      guard let providerId = node.lazyListProviderId else { return }
+      targetID = AnyHashable(bonsaiNativeLazyRowKey(providerId: providerId, index: index))
     } else {
       guard node.children.indices.contains(index) else { return }
       targetID = AnyHashable(node.children[index].id)
@@ -2998,7 +3027,8 @@ private struct BonsaiNativeNodeView: View {
       scrollToIndex: { index in
         guard let proxy else { return }
         if node.lazyListProviderId != nil {
-          proxy.scrollTo(index, anchor: .top)
+          guard let providerId = node.lazyListProviderId else { return }
+          proxy.scrollTo(bonsaiNativeLazyRowKey(providerId: providerId, index: index), anchor: .top)
         } else if node.children.indices.contains(index) {
           proxy.scrollTo(node.children[index].id, anchor: .top)
         }
@@ -4723,6 +4753,17 @@ private func nativeNode(from pointer: UnsafeMutableRawPointer?) -> BonsaiNativeN
   return Unmanaged<BonsaiNativeNode>.fromOpaque(pointer).takeUnretainedValue()
 }
 
+private func bonsaiNativeLazyRowKey(providerId: Int32, index: Int) -> String {
+  guard let keyCallback = bonsaiNativeLazyRowKeyCallback else {
+    return "\(index)"
+  }
+  guard let keyPointer = keyCallback(providerId, Int32(index)) else {
+    return "\(index)"
+  }
+  defer { free(UnsafeMutableRawPointer(keyPointer)) }
+  return String(cString: keyPointer)
+}
+
 @_cdecl("bonsai_native_swiftui_run_application")
 public func bonsai_native_swiftui_run_application(_ callback: BonsaiNativeLaunchCallback?) {
   BonsaiNativeAppDelegate.launchCallback = callback
@@ -5205,9 +5246,11 @@ public func bonsai_native_swiftui_clear_lazy_list_rows(_ pointer: UnsafeMutableR
 
 @_cdecl("bonsai_native_swiftui_register_lazy_list_callbacks")
 public func bonsai_native_swiftui_register_lazy_list_callbacks(
+  _ keyCallback: BonsaiNativeLazyRowKeyCallback?,
   _ renderCallback: BonsaiNativeLazyRowRenderCallback?,
   _ releaseCallback: BonsaiNativeLazyRowReleaseCallback?
 ) {
+  bonsaiNativeLazyRowKeyCallback = keyCallback
   bonsaiNativeLazyRowRenderCallback = renderCallback
   bonsaiNativeLazyRowReleaseCallback = releaseCallback
 }

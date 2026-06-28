@@ -8,10 +8,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <dispatch/dispatch.h>
 
 typedef void (*bonsai_native_event_callback)(int32_t event_id, const char *text);
 typedef void *(*bonsai_native_lazy_row_render_callback)(
+  int32_t provider_id,
+  int32_t index);
+typedef char *(*bonsai_native_lazy_row_key_callback)(
   int32_t provider_id,
   int32_t index);
 typedef void (*bonsai_native_lazy_row_release_callback)(
@@ -79,6 +83,7 @@ extern void bonsai_native_swiftui_set_lazy_list_rows(
   int32_t invalidated_index_count);
 extern void bonsai_native_swiftui_clear_lazy_list_rows(void *node);
 extern void bonsai_native_swiftui_register_lazy_list_callbacks(
+  bonsai_native_lazy_row_key_callback key_callback,
   bonsai_native_lazy_row_render_callback render_callback,
   bonsai_native_lazy_row_release_callback release_callback);
 extern void bonsai_native_swiftui_set_list_behavior(
@@ -417,6 +422,7 @@ extern void bonsai_native_swiftui_http_send_json(
 
 static value *event_callback = NULL;
 static value *launch_callback = NULL;
+static value *lazy_row_key_callback = NULL;
 static value *lazy_row_render_callback = NULL;
 static value *lazy_row_release_callback = NULL;
 
@@ -488,6 +494,26 @@ static void *swiftui_lazy_row_render_callback(int32_t provider_id, int32_t index
   CAMLdrop;
   caml_release_runtime_system();
   return row;
+}
+
+static char *swiftui_lazy_row_key_callback(int32_t provider_id, int32_t index)
+{
+  if (lazy_row_key_callback == NULL) {
+    return NULL;
+  }
+
+  char *key = NULL;
+  caml_acquire_runtime_system();
+  CAMLparam0();
+  CAMLlocal1(result);
+  result =
+    caml_callback2_exn(*lazy_row_key_callback, Val_int(provider_id), Val_int(index));
+  if (!Is_exception_result(result)) {
+    key = strdup(String_val(result));
+  }
+  CAMLdrop;
+  caml_release_runtime_system();
+  return key;
 }
 
 static void swiftui_lazy_row_release_callback(int32_t provider_id, int32_t index)
@@ -578,10 +604,19 @@ CAMLprim value bonsai_apple_swiftui_register_event_callback(value callback)
 }
 
 CAMLprim value bonsai_apple_swiftui_register_lazy_list_callbacks(
+  value key_callback,
   value render_callback,
   value release_callback)
 {
-  CAMLparam2(render_callback, release_callback);
+  CAMLparam3(key_callback, render_callback, release_callback);
+  if (lazy_row_key_callback == NULL) {
+    lazy_row_key_callback = caml_stat_alloc(sizeof(value));
+    *lazy_row_key_callback = key_callback;
+    caml_register_generational_global_root(lazy_row_key_callback);
+  } else {
+    caml_modify_generational_global_root(lazy_row_key_callback, key_callback);
+  }
+
   if (lazy_row_render_callback == NULL) {
     lazy_row_render_callback = caml_stat_alloc(sizeof(value));
     *lazy_row_render_callback = render_callback;
@@ -599,6 +634,7 @@ CAMLprim value bonsai_apple_swiftui_register_lazy_list_callbacks(
   }
 
   bonsai_native_swiftui_register_lazy_list_callbacks(
+    swiftui_lazy_row_key_callback,
     swiftui_lazy_row_render_callback,
     swiftui_lazy_row_release_callback);
   CAMLreturn(Val_unit);

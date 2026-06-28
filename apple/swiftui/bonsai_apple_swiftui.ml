@@ -83,7 +83,8 @@ external register_event_callback
   = "bonsai_apple_swiftui_register_event_callback"
 
 external register_lazy_list_callbacks
-  :  (int -> int -> native)
+  :  (int -> int -> string)
+  -> (int -> int -> native)
   -> (int -> int -> unit)
   -> unit
   = "bonsai_apple_swiftui_register_lazy_list_callbacks"
@@ -1045,7 +1046,8 @@ module Backend = struct
     }
 
   and lazy_list_provider =
-    { render_row : int -> view
+    { key_row : int -> string
+    ; render_row : int -> view
     ; release_row : int -> unit
     }
 
@@ -1290,7 +1292,8 @@ module Backend = struct
       (Array.of_list (List.map children ~f:(fun child -> child.native)))
   ;;
 
-  let set_lazy_list_rows view ~length ~version ~stale_indices ~render_row ~release_row =
+  let set_lazy_list_rows view ~length ~version ~stale_indices ~key_row ~render_row
+      ~release_row =
     let provider_id =
       match view.lazy_list_provider_id with
       | Some provider_id -> provider_id
@@ -1300,7 +1303,7 @@ module Backend = struct
         view.lazy_list_provider_id <- Some provider_id;
         provider_id
     in
-    Hashtbl.set lazy_list_providers ~key:provider_id ~data:{ render_row; release_row };
+    Hashtbl.set lazy_list_providers ~key:provider_id ~data:{ key_row; render_row; release_row };
     set_native_lazy_list_rows view.native provider_id length version
       (Array.of_list stale_indices)
   ;;
@@ -2360,13 +2363,19 @@ let render_lazy_list_row provider_id index =
   | Some provider -> (provider.render_row index).Backend.native
 ;;
 
+let key_lazy_list_row provider_id index =
+  match Hashtbl.find Backend.lazy_list_providers provider_id with
+  | None -> string_of_int index
+  | Some provider -> provider.key_row index
+;;
+
 let release_lazy_list_row provider_id index =
   match Hashtbl.find Backend.lazy_list_providers provider_id with
   | None -> ()
   | Some provider -> provider.release_row index
 ;;
 
-let () = register_lazy_list_callbacks render_lazy_list_row release_lazy_list_row
+let () = register_lazy_list_callbacks key_lazy_list_row render_lazy_list_row release_lazy_list_row
 
 module Renderer = Apple.Renderer.Make (Backend)
 module App = Apple.App.Make (Backend)

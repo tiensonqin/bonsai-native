@@ -623,6 +623,7 @@ type node =
   | Lazy_list_node of
       { length : int
       ; key : int -> string
+      ; state_key : (int -> string) option
       ; row : int -> node
       ; on_refresh : unit Action.t option
       ; on_delete : (int -> unit Action.t) option
@@ -1114,6 +1115,7 @@ let lazy_list
       ?(edit_mode = false)
       ?focused_row_key
       ?focused_row_index
+      ?state_key
       ~length
       ~key
       ~row
@@ -1124,6 +1126,7 @@ let lazy_list
     {
       length;
       key;
+      state_key;
       row;
       on_refresh;
       on_delete;
@@ -1755,6 +1758,7 @@ module Renderer = struct
       -> length:int
       -> version:int
       -> stale_indices:int list
+      -> key_row:(int -> string)
       -> render_row:(int -> view)
       -> release_row:(int -> unit)
       -> unit
@@ -1909,6 +1913,12 @@ module Renderer = struct
       ; mounted : t
       }
 
+    and lazy_row =
+      { identity_key : string
+      ; state_key : string
+      ; mounted : t
+      }
+
     and t =
       { mutable kind : backend_kind
       ; mutable view : Backend.view
@@ -1916,7 +1926,7 @@ module Renderer = struct
       ; schedule_event : unit Action.t -> unit
       ; mutable children : child list
       ; mutable modifier_children : modifier_child list
-      ; lazy_rows : (int, string * t) Hashtbl.t
+      ; lazy_rows : (int, lazy_row) Hashtbl.t
       ; mutable lazy_list_version : int
       }
 
@@ -1929,7 +1939,12 @@ module Renderer = struct
       Backend.destroy t.view
 
     and clear_lazy_rows t =
-      let rows = Hashtbl.fold (fun _index (_key, row) rows -> row :: rows) t.lazy_rows [] in
+      let rows =
+        Hashtbl.fold
+          (fun _index (row : lazy_row) rows -> row.mounted :: rows)
+          t.lazy_rows
+          []
+      in
       Hashtbl.clear t.lazy_rows;
       t.lazy_list_version <- 0;
       List.iter rows ~f:destroy
@@ -1937,12 +1952,13 @@ module Renderer = struct
 
     let find_lazy_row_by_key t ~target_index ~target_key =
       Hashtbl.fold
-        (fun cached_index (cached_key, mounted) found ->
+        (fun cached_index (cached : lazy_row) found ->
            match found with
            | Some _ -> found
            | None ->
-             if cached_index <> target_index && String.equal cached_key target_key
-             then Some (cached_index, mounted)
+             if cached_index <> target_index
+                && String.equal cached.identity_key target_key
+             then Some (cached_index, cached)
              else None)
         t.lazy_rows
         None
@@ -2684,6 +2700,7 @@ module Renderer = struct
            {
              length;
              key;
+             state_key;
              row;
              on_refresh;
              on_delete;
@@ -2697,14 +2714,22 @@ module Renderer = struct
            length (Hashtbl.length t.lazy_rows) t.lazy_list_version;
          List.iter t.children ~f:(fun child -> destroy child.mounted);
          t.children <- [];
+         let row_state_key index =
+           match state_key with
+           | None -> key index
+           | Some state_key -> state_key index
+         in
          let stale_indices =
            debug_time "lazy_list_stale_scan" (fun () ->
                Hashtbl.fold
-                 (fun index (cached_key, _mounted) stale_indices ->
+                 (fun index cached stale_indices ->
                     if index >= length then index :: stale_indices
                     else
                       let row_key = key index in
-                      if String.equal cached_key row_key then stale_indices
+                      let row_state_key = row_state_key index in
+                      if String.equal cached.identity_key row_key
+                         && String.equal cached.state_key row_state_key
+                      then stale_indices
                       else
                         match find_lazy_row_by_key t ~target_index:index ~target_key:row_key with
                         | Some _ -> index :: stale_indices
@@ -2717,41 +2742,48 @@ module Renderer = struct
              List.iter stale_indices ~f:(fun index ->
                  match Hashtbl.find_opt t.lazy_rows index with
                  | None -> ()
-                 | Some (_key, mounted) ->
+                 | Some cached ->
                    Hashtbl.remove t.lazy_rows index;
-                   destroy mounted));
+                   destroy cached.mounted));
          if not (List.is_empty stale_indices) then
            t.lazy_list_version <- t.lazy_list_version + 1;
          let render_row index =
            let row_key = key index in
+           let row_state_key = row_state_key index in
            match Hashtbl.find_opt t.lazy_rows index with
-           | Some (cached_key, mounted) when String.equal cached_key row_key ->
+           | Some cached
+             when String.equal cached.identity_key row_key
+                  && String.equal cached.state_key row_state_key ->
+             let mounted = cached.mounted in
              update mounted (row index);
              mounted.view
            | cached ->
              (match find_lazy_row_by_key t ~target_index:index ~target_key:row_key with
-              | Some (cached_index, mounted) ->
+              | Some (cached_index, cached_row) ->
+                let mounted = cached_row.mounted in
                 Hashtbl.remove t.lazy_rows cached_index;
-                Option.iter cached ~f:(fun (displaced_key, displaced_mounted) ->
-                    if displaced_mounted != mounted
+                Option.iter cached ~f:(fun displaced ->
+                    if displaced.mounted != mounted
                     then
                       Hashtbl.replace t.lazy_rows cached_index
-                        (displaced_key, displaced_mounted));
+                        displaced);
                 update mounted (row index);
-                Hashtbl.replace t.lazy_rows index (row_key, mounted);
+                Hashtbl.replace t.lazy_rows index
+                  { identity_key = row_key; state_key = row_state_key; mounted };
                 mounted.view
               | None ->
-                Option.iter cached ~f:(fun (_cached_key, mounted) -> destroy mounted);
+                Option.iter cached ~f:(fun cached -> destroy cached.mounted);
                 let mounted = mount ~schedule_event:t.schedule_event (row index) in
-                Hashtbl.replace t.lazy_rows index (row_key, mounted);
+                Hashtbl.replace t.lazy_rows index
+                  { identity_key = row_key; state_key = row_state_key; mounted };
                 mounted.view)
          in
          let release_row index =
            match Hashtbl.find_opt t.lazy_rows index with
            | None -> ()
-           | Some (_key, mounted) ->
+           | Some cached ->
              Hashtbl.remove t.lazy_rows index;
-             destroy mounted
+             destroy cached.mounted
          in
          debug_time "lazy_list_set_handlers" (fun () ->
              Backend.set_on_click t.view None;
@@ -2776,6 +2808,7 @@ module Renderer = struct
          debug_time "lazy_list_set_rows" (fun () ->
              Backend.set_lazy_list_rows t.view ~length ~version:t.lazy_list_version
                ~stale_indices
+               ~key_row:key
                ~render_row ~release_row);
          debug_log "lazy_list_update_end length=%d cached_rows=%d version=%d"
            length (Hashtbl.length t.lazy_rows) t.lazy_list_version
@@ -3703,11 +3736,12 @@ module For_testing = struct
       view.list_focused_row_index <- focused_row_index
     ;;
 
-    let set_lazy_list_rows view ~length ~version:_ ~stale_indices:_ ~render_row
+    let set_lazy_list_rows view ~length ~version:_ ~stale_indices:_ ~key_row
+        ~render_row
         ~release_row:_ =
       mutate ();
       view.children <-
-        List.init length (fun index -> Some (string_of_int index), render_row index)
+        List.init length (fun index -> Some (key_row index), render_row index)
     ;;
 
     let set_tabs view ~selected ~on_select tabs =

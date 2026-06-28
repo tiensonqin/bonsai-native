@@ -320,6 +320,7 @@ val lazy_list
   -> ?edit_mode:bool
   -> ?focused_row_key:string
   -> ?focused_row_index:int
+  -> ?state_key:(int -> string)
   -> length:int
   -> key:(int -> string)
   -> row:(int -> node)
@@ -862,6 +863,7 @@ module Renderer : sig
       -> length:int
       -> version:int
       -> stale_indices:int list
+      -> key_row:(int -> string)
       -> render_row:(int -> view)
       -> release_row:(int -> unit)
       -> unit
