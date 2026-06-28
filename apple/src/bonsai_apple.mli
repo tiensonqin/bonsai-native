@@ -861,6 +861,7 @@ module Renderer : sig
       :  view
       -> length:int
       -> version:int
+      -> stale_indices:int list
       -> render_row:(int -> view)
       -> release_row:(int -> unit)
       -> unit

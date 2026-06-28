@@ -344,6 +344,7 @@ external set_native_lazy_list_rows
   -> int
   -> int
   -> int
+  -> int array
   -> unit
   = "bonsai_apple_swiftui_set_lazy_list_rows"
 
@@ -1289,7 +1290,7 @@ module Backend = struct
       (Array.of_list (List.map children ~f:(fun child -> child.native)))
   ;;
 
-  let set_lazy_list_rows view ~length ~version ~render_row ~release_row =
+  let set_lazy_list_rows view ~length ~version ~stale_indices ~render_row ~release_row =
     let provider_id =
       match view.lazy_list_provider_id with
       | Some provider_id -> provider_id
@@ -1301,6 +1302,7 @@ module Backend = struct
     in
     Hashtbl.set lazy_list_providers ~key:provider_id ~data:{ render_row; release_row };
     set_native_lazy_list_rows view.native provider_id length version
+      (Array.of_list stale_indices)
   ;;
 
   let set_list_behavior

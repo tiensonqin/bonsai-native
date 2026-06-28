@@ -446,11 +446,24 @@ let test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update () =
     (contains source ~substring:"lazyListVersion")
     "SwiftUI lazy lists should publish a version each time OCaml updates the row provider";
   require
+    (contains source ~substring:"lazyListInvalidatedIndices")
+    "SwiftUI lazy lists should receive the exact stale row indices from the OCaml provider";
+  require
+    (contains source ~substring:"invalidatedIndexPointer")
+    "the OCaml-to-Swift bridge should pass stale indices with lazy list row updates";
+  require
+    (contains source ~substring:"if owner.lazyListInvalidatedIndices.contains(index)")
+    "visible lazy rows should refresh only when their own index was invalidated";
+  require
     (contains source ~substring:"version: node.lazyListVersion")
     "SwiftUI lazy rows should receive the provider version so visible rows can refresh";
   require
-    (contains source ~substring:"key: \"\\(node.lazyListVersion):\\(index)\"")
-    "SwiftUI cached lazy rows should be invalidated when the OCaml provider version changes";
+    (contains source ~substring:"key: \"\\(index)\"")
+    "SwiftUI lazy row cache identity should stay stable across provider updates";
+  require
+    (not (contains source ~substring:"key: \"\\(node.lazyListVersion):\\(index)\""))
+    "global provider version should not be part of every row key because append-only \
+     pagination should not invalidate all visible row caches";
   require
     (contains source ~substring:"let owner: BonsaiNativeNode")
     "SwiftUI lazy row wrappers should not observe the whole list owner";
@@ -487,6 +500,44 @@ let test_swiftui_lazy_list_retained_cache_stays_small () =
     (not (contains source ~substring:"let maxRetainedRows = 32"))
     "SwiftUI lazy list retained cache should not be almost the same size as one visible \
      screen on iPhone"
+;;
+
+let test_swiftui_lazy_list_logs_ui_row_lifecycle_counts () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"BonsaiNativeRowLifecycleProbeView(listID: listID)")
+    "lazy row lifecycle logging should use a platform view probe attached to each row";
+  require
+    (contains source ~substring:"bonsaiNativeLifecycleProbeBackground")
+    "lifecycle probes should only be attached when list debug logging is enabled";
+  require
+    (not (contains source ~substring:"BonsaiNativeLazyRowLifecycleToken"))
+    "lazy row lifecycle logging should not use StateObject tokens because they change row \
+     retention behavior";
+  require
+    (not (contains source ~substring:"BonsaiNativeMediaViewLifecycleToken"))
+    "media lifecycle logging should not use StateObject tokens because they change media \
+     retention behavior";
+  require
+    (contains source ~substring:"uiRowCreated(listID:")
+    "lazy row wrappers should log creation so leaked SwiftUI/UI rows can be counted";
+  require
+    (contains source ~substring:"uiRowDestroyed(listID:")
+    "lazy row wrappers should log destruction so retained UI rows can be distinguished \
+     from retained OCaml provider rows";
+  require
+    (contains source ~substring:"ui_row_live=")
+    "list_perf logs should include currently live SwiftUI row wrappers";
+  require
+    (contains source ~substring:"ui_row_created=")
+    "list_perf logs should include cumulative SwiftUI row wrapper creation count";
+  require
+    (contains source ~substring:"ui_row_destroyed=")
+    "list_perf logs should include cumulative SwiftUI row wrapper destruction count";
+  require
+    (contains source ~substring:"media_view_live=")
+    "list_perf logs should include live media view count because WebKit/image rows can \
+     leak separately from text rows"
 ;;
 
 let test_swiftui_lazy_list_disappear_defers_detach_without_releasing_cache () =
@@ -1454,8 +1505,18 @@ let test_swiftui_custom_view_supports_youtube_webkit_iframes () =
 let test_youtube_iframe_does_not_steal_list_row_gestures () =
   let source = read_file swiftui_source_path in
   require
-    (contains source ~substring:"BonsaiNativeYouTubeIframeView(payload: payload)\n          .allowsHitTesting(false)")
-    "youtube iframe previews should not steal List row swipe or long-press move gestures";
+    (contains source ~substring:"BonsaiNativeDeferredYouTubeIframeView(payload: payload)")
+    "youtube iframe rows should render a lightweight preview first so scrolling does not \
+     create WKWebView instances";
+  require
+    (contains source ~substring:"@State private var isLoaded = false")
+    "youtube iframe previews should only create WebKit after an explicit user action";
+  require
+    (contains source ~substring:"BonsaiNativeYouTubeIframeView(payload: payload)")
+    "loaded youtube iframes should not steal List row swipe or long-press move gestures";
+  require
+    (contains source ~substring:".allowsHitTesting(false)")
+    "loaded youtube iframes should opt out of hit testing";
   require
     (contains source ~substring:"webView.isUserInteractionEnabled = false")
     "the underlying WKWebView should not receive row gesture touches"
@@ -1816,6 +1877,7 @@ let () =
   test_swiftui_list_debug_perf_log_uses_swift_safe_interpolation ();
   test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update ();
   test_swiftui_lazy_list_retained_cache_stays_small ();
+  test_swiftui_lazy_list_logs_ui_row_lifecycle_counts ();
   test_swiftui_lazy_list_disappear_defers_detach_without_releasing_cache ();
   test_swiftui_lazy_list_blurs_focused_row_after_disappear ();
   test_swiftui_lazy_list_setters_skip_unchanged_published_values ();

@@ -1754,6 +1754,7 @@ module Renderer = struct
       :  view
       -> length:int
       -> version:int
+      -> stale_indices:int list
       -> render_row:(int -> view)
       -> release_row:(int -> unit)
       -> unit
@@ -2774,6 +2775,7 @@ module Renderer = struct
                ~focused_row_index);
          debug_time "lazy_list_set_rows" (fun () ->
              Backend.set_lazy_list_rows t.view ~length ~version:t.lazy_list_version
+               ~stale_indices
                ~render_row ~release_row);
          debug_log "lazy_list_update_end length=%d cached_rows=%d version=%d"
            length (Hashtbl.length t.lazy_rows) t.lazy_list_version
@@ -3701,7 +3703,8 @@ module For_testing = struct
       view.list_focused_row_index <- focused_row_index
     ;;
 
-    let set_lazy_list_rows view ~length ~version:_ ~render_row ~release_row:_ =
+    let set_lazy_list_rows view ~length ~version:_ ~stale_indices:_ ~render_row
+        ~release_row:_ =
       mutate ();
       view.children <-
         List.init length (fun index -> Some (string_of_int index), render_row index)

@@ -74,7 +74,9 @@ extern void bonsai_native_swiftui_set_lazy_list_rows(
   void *node,
   int32_t provider_id,
   int32_t count,
-  int32_t version);
+  int32_t version,
+  int32_t *invalidated_indices,
+  int32_t invalidated_index_count);
 extern void bonsai_native_swiftui_clear_lazy_list_rows(void *node);
 extern void bonsai_native_swiftui_register_lazy_list_callbacks(
   bonsai_native_lazy_row_render_callback render_callback,
@@ -935,15 +937,31 @@ CAMLprim value bonsai_apple_swiftui_set_lazy_list_rows(
   value node,
   value provider_id,
   value count,
-  value version)
+  value version,
+  value invalidated_indices)
 {
-  CAMLparam4(node, provider_id, count, version);
+  CAMLparam5(node, provider_id, count, version, invalidated_indices);
+
+  mlsize_t invalidated_index_count = Wosize_val(invalidated_indices);
+  int32_t *invalidated_index_values = NULL;
+  if (invalidated_index_count > 0) {
+    invalidated_index_values = malloc(sizeof(int32_t) * invalidated_index_count);
+    if (invalidated_index_values == NULL) {
+      caml_failwith("Unable to allocate lazy list invalidated index array");
+    }
+    for (mlsize_t index = 0; index < invalidated_index_count; index++) {
+      invalidated_index_values[index] = (int32_t)Int_val(Field(invalidated_indices, index));
+    }
+  }
 
   bonsai_native_swiftui_set_lazy_list_rows(
     pointer_val(node),
     Int_val(provider_id),
     (int32_t)Int_val(count),
-    (int32_t)Int_val(version));
+    (int32_t)Int_val(version),
+    invalidated_index_values,
+    (int32_t)invalidated_index_count);
+  free(invalidated_index_values);
   CAMLreturn(Val_unit);
 }
 

@@ -704,6 +704,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var lazyListProviderId: Int32?
   @Published var lazyListRowCount = 0
   @Published var lazyListVersion = 0
+  var lazyListInvalidatedIndices: Set<Int> = []
   var lazyListRowsByIndex: [Int: BonsaiNativeNode] = [:]
   var lazyListRowKeyByIndex: [Int: String] = [:]
   var lazyListRetainedOrder: [Int] = []
@@ -725,6 +726,8 @@ private func sameNodeSequence(_ lhs: [BonsaiNativeNode], _ rhs: [BonsaiNativeNod
 }
 
 private final class BonsaiNativeFrameProbe: NSObject {
+  static let shared = BonsaiNativeFrameProbe()
+
   private let isEnabled =
     ProcessInfo.processInfo.environment["BONSAI_NATIVE_LIST_DEBUG"] == "1"
   private var displayLink: CADisplayLink?
@@ -742,6 +745,16 @@ private final class BonsaiNativeFrameProbe: NSObject {
     let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
     link.add(to: .main, forMode: .common)
     displayLink = link
+  }
+
+  func markScrollSample(listID: UUID, index: Int, totalRows: Int) {
+    guard isEnabled else { return }
+    start()
+    fputs(
+      "[BonsaiNativeScrollPerf] scroll_stress_sample list=\(listID.uuidString) index=\(index) total_rows=\(totalRows) past_first_ten_rows=\(index >= 10)\n",
+      stderr
+    )
+    fflush(stderr)
   }
 
   @objc private func tick(_ link: CADisplayLink) {
@@ -811,11 +824,16 @@ private final class BonsaiNativeScrollStressProbe {
     index: Int,
     direction: Int
   ) {
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
       guard let run = self.runningLists[listID] else { return }
       let totalRows = run.totalRows
       guard totalRows > 0 else { return }
       let boundedIndex = min(max(0, index), max(0, totalRows - 1))
+      BonsaiNativeFrameProbe.shared.markScrollSample(
+        listID: listID,
+        index: boundedIndex,
+        totalRows: totalRows
+      )
       run.scrollToIndex(boundedIndex)
       let nextDirection: Int
       if boundedIndex >= totalRows - 1 {
@@ -825,7 +843,7 @@ private final class BonsaiNativeScrollStressProbe {
       } else {
         nextDirection = direction
       }
-      let nextIndex = boundedIndex + (nextDirection * 4)
+      let nextIndex = boundedIndex + (nextDirection * 20)
       self.run(
         listID: listID,
         index: nextIndex,
@@ -841,8 +859,9 @@ private final class BonsaiNativeListVirtualizationProbe {
   private let logger = Logger(subsystem: "com.logseq.bonsai-native", category: "ListDebug")
   private let isEnabled =
     ProcessInfo.processInfo.environment["BONSAI_NATIVE_LIST_DEBUG"] == "1"
-  private let frameProbe = BonsaiNativeFrameProbe()
   private var visibleRowsByList: [UUID: Set<UUID>] = [:]
+  private var visibleIndicesByList: [UUID: Set<Int>] = [:]
+  private var scrollPastFirstTenRowsByList: Set<UUID> = []
   private var retainedRowsByList: [UUID: Set<UUID>] = [:]
   private var peakVisibleRowsByList: [UUID: Int] = [:]
   private var reportStartedAtByList: [UUID: CFTimeInterval] = [:]
@@ -856,10 +875,20 @@ private final class BonsaiNativeListVirtualizationProbe {
   private var renderMaxMsByList: [UUID: Double] = [:]
   private var releaseTotalMsByList: [UUID: Double] = [:]
   private var releaseMaxMsByList: [UUID: Double] = [:]
+  private var uiRowsCreatedByList: [UUID: Int] = [:]
+  private var uiRowsDestroyedByList: [UUID: Int] = [:]
+  private var uiRowsLiveByList: [UUID: Int] = [:]
+  private var mediaViewsCreated = 0
+  private var mediaViewsDestroyed = 0
+  private var mediaViewsLive = 0
+
+  var isDebugEnabled: Bool {
+    isEnabled
+  }
 
   func listUpdated(listID: UUID, totalRows: Int, reason: String) {
     guard isEnabled else { return }
-    frameProbe.start()
+    BonsaiNativeFrameProbe.shared.start()
     let visibleCount = visibleRowsByList[listID]?.count ?? 0
     let retainedCount = retainedRowsByList[listID]?.count ?? 0
     let peakVisibleCount = peakVisibleRowsByList[listID] ?? 0
@@ -877,10 +906,52 @@ private final class BonsaiNativeListVirtualizationProbe {
     peakVisibleRowsByList[listID] = peakVisibleRows
   }
 
+  func rowAppearedAtIndex(listID: UUID, rowID: UUID, index: Int, totalRows: Int) {
+    guard isEnabled else { return }
+    rowAppeared(listID: listID, rowID: rowID, totalRows: totalRows)
+    visibleIndicesByList[listID, default: []].insert(index)
+    if index >= 10 {
+      scrollPastFirstTenRows(listID: listID, index: index)
+    }
+  }
+
   func rowDisappeared(listID: UUID, rowID: UUID, totalRows _: Int) {
     guard isEnabled else { return }
     disappearedByList[listID, default: 0] += 1
     visibleRowsByList[listID, default: []].remove(rowID)
+  }
+
+  func rowDisappearedAtIndex(listID: UUID, rowID: UUID, index: Int, totalRows: Int) {
+    guard isEnabled else { return }
+    rowDisappeared(listID: listID, rowID: rowID, totalRows: totalRows)
+    visibleIndicesByList[listID, default: []].remove(index)
+  }
+
+  func scrollPastFirstTenRows(listID: UUID, index: Int) {
+    guard isEnabled else { return }
+    guard !scrollPastFirstTenRowsByList.contains(listID) else { return }
+    scrollPastFirstTenRowsByList.insert(listID)
+    log("scroll_past_first_ten_rows list=\(listID.uuidString) index=\(index)")
+  }
+
+  func operationStarted(name: String, listID: UUID, detail: String = "") -> CFTimeInterval {
+    let startedAt = CACurrentMediaTime()
+    guard isEnabled else { return startedAt }
+    log("operation_start name=\(name) list=\(listID.uuidString) \(detail)")
+    return startedAt
+  }
+
+  func operationFinished(
+    name: String,
+    listID: UUID,
+    startedAt: CFTimeInterval,
+    detail: String = ""
+  ) {
+    guard isEnabled else { return }
+    let elapsedMs = (CACurrentMediaTime() - startedAt) * 1000
+    log(
+      "operation_latency name=\(name) list=\(listID.uuidString) elapsed_ms=\(debugDouble(elapsedMs, digits: 2)) \(detail)"
+    )
   }
 
   func rowCacheHit(listID: UUID) {
@@ -915,6 +986,30 @@ private final class BonsaiNativeListVirtualizationProbe {
     retainedRowsByList[listID, default: []].remove(rowID)
   }
 
+  func uiRowCreated(listID: UUID) {
+    guard isEnabled else { return }
+    uiRowsCreatedByList[listID, default: 0] += 1
+    uiRowsLiveByList[listID, default: 0] += 1
+  }
+
+  func uiRowDestroyed(listID: UUID) {
+    guard isEnabled else { return }
+    uiRowsDestroyedByList[listID, default: 0] += 1
+    uiRowsLiveByList[listID, default: 0] = max(0, uiRowsLiveByList[listID, default: 0] - 1)
+  }
+
+  func mediaViewCreated(kind _: String) {
+    guard isEnabled else { return }
+    mediaViewsCreated += 1
+    mediaViewsLive += 1
+  }
+
+  func mediaViewDestroyed(kind _: String) {
+    guard isEnabled else { return }
+    mediaViewsDestroyed += 1
+    mediaViewsLive = max(0, mediaViewsLive - 1)
+  }
+
   func maybeReport(
     listID: UUID,
     totalRows: Int,
@@ -933,8 +1028,13 @@ private final class BonsaiNativeListVirtualizationProbe {
     let renderCount = rendered + refreshed
     let renderTotal = renderTotalMsByList[listID] ?? 0
     let releaseTotal = releaseTotalMsByList[listID] ?? 0
+    let visibleIndices = visibleIndicesByList[listID] ?? []
+    let minVisibleIndex = visibleIndices.min() ?? -1
+    let maxVisibleIndex = visibleIndices.max() ?? -1
+    let pastFirstTenRows =
+      scrollPastFirstTenRowsByList.contains(listID) || maxVisibleIndex >= 10
     log(
-      "list_perf seconds=\(debugDouble(now - startedAt, digits: 2)) list=\(listID.uuidString) total_rows=\(totalRows) visible_rows=\(visibleRowsByList[listID]?.count ?? 0) visible_indices=\(visibleIndices) retained_rows=\(retainedRowsByList[listID]?.count ?? 0) cached_rows=\(cachedRows) retained_order=\(retainedOrder) peak_visible_rows=\(peakVisibleRowsByList[listID] ?? 0) appear=\(appearedByList[listID] ?? 0) disappear=\(disappearedByList[listID] ?? 0) cache_hit=\(cacheHitsByList[listID] ?? 0) render=\(rendered) refresh=\(refreshed) release=\(releaseCount) render_total_ms=\(debugDouble(renderTotal, digits: 2)) render_avg_ms=\(debugDouble(renderCount == 0 ? 0 : renderTotal / Double(renderCount), digits: 3)) render_max_ms=\(debugDouble(renderMaxMsByList[listID] ?? 0, digits: 2)) release_total_ms=\(debugDouble(releaseTotal, digits: 2)) release_avg_ms=\(debugDouble(releaseCount == 0 ? 0 : releaseTotal / Double(releaseCount), digits: 3)) release_max_ms=\(debugDouble(releaseMaxMsByList[listID] ?? 0, digits: 2))"
+      "list_perf seconds=\(debugDouble(now - startedAt, digits: 2)) list=\(listID.uuidString) total_rows=\(totalRows) visible_rows=\(visibleRowsByList[listID]?.count ?? 0) visible_indices=\(visibleIndices.count) min_visible_index=\(minVisibleIndex) max_visible_index=\(maxVisibleIndex) past_first_ten_rows=\(pastFirstTenRows) retained_rows=\(retainedRowsByList[listID]?.count ?? 0) cached_rows=\(cachedRows) retained_order=\(retainedOrder) ui_row_live=\(uiRowsLiveByList[listID] ?? 0) ui_row_created=\(uiRowsCreatedByList[listID] ?? 0) ui_row_destroyed=\(uiRowsDestroyedByList[listID] ?? 0) media_view_live=\(mediaViewsLive) media_view_created=\(mediaViewsCreated) media_view_destroyed=\(mediaViewsDestroyed) peak_visible_rows=\(peakVisibleRowsByList[listID] ?? 0) appear=\(appearedByList[listID] ?? 0) disappear=\(disappearedByList[listID] ?? 0) cache_hit=\(cacheHitsByList[listID] ?? 0) render=\(rendered) refresh=\(refreshed) release=\(releaseCount) render_total_ms=\(debugDouble(renderTotal, digits: 2)) render_avg_ms=\(debugDouble(renderCount == 0 ? 0 : renderTotal / Double(renderCount), digits: 3)) render_max_ms=\(debugDouble(renderMaxMsByList[listID] ?? 0, digits: 2)) release_total_ms=\(debugDouble(releaseTotal, digits: 2)) release_avg_ms=\(debugDouble(releaseCount == 0 ? 0 : releaseTotal / Double(releaseCount), digits: 3)) release_max_ms=\(debugDouble(releaseMaxMsByList[listID] ?? 0, digits: 2))"
     )
     reportStartedAtByList[listID] = now
     appearedByList[listID] = 0
@@ -1044,44 +1144,115 @@ private final class BonsaiNativeHostModel: ObservableObject {
   }
 }
 
+private final class BonsaiNativeListLifecycleUIView: UIView {
+  let listID: UUID?
+  let mediaKind: String?
+
+  init(listID: UUID? = nil, mediaKind: String? = nil) {
+    self.listID = listID
+    self.mediaKind = mediaKind
+    super.init(frame: .zero)
+    isUserInteractionEnabled = false
+    backgroundColor = .clear
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) is not supported")
+  }
+}
+
+private struct BonsaiNativeRowLifecycleProbeView: UIViewRepresentable {
+  let listID: UUID
+
+  func makeUIView(context _: Context) -> BonsaiNativeListLifecycleUIView {
+    BonsaiNativeListVirtualizationProbe.shared.uiRowCreated(listID: listID)
+    return BonsaiNativeListLifecycleUIView(listID: listID)
+  }
+
+  func updateUIView(_ uiView: BonsaiNativeListLifecycleUIView, context _: Context) {}
+
+  static func dismantleUIView(_ uiView: BonsaiNativeListLifecycleUIView, coordinator _: ()) {
+    if let listID = uiView.listID {
+      BonsaiNativeListVirtualizationProbe.shared.uiRowDestroyed(listID: listID)
+    }
+  }
+}
+
+private struct BonsaiNativeMediaLifecycleProbeView: UIViewRepresentable {
+  let kind: String
+
+  func makeUIView(context _: Context) -> BonsaiNativeListLifecycleUIView {
+    BonsaiNativeListVirtualizationProbe.shared.mediaViewCreated(kind: kind)
+    return BonsaiNativeListLifecycleUIView(mediaKind: kind)
+  }
+
+  func updateUIView(_ uiView: BonsaiNativeListLifecycleUIView, context _: Context) {}
+
+  static func dismantleUIView(_ uiView: BonsaiNativeListLifecycleUIView, coordinator _: ()) {
+    if let mediaKind = uiView.mediaKind {
+      BonsaiNativeListVirtualizationProbe.shared.mediaViewDestroyed(kind: mediaKind)
+    }
+  }
+}
+
+@ViewBuilder
+private func bonsaiNativeLifecycleProbeBackground<Content: View>(
+  @ViewBuilder content: () -> Content
+) -> some View {
+  if BonsaiNativeListVirtualizationProbe.shared.isDebugEnabled {
+    content()
+      .frame(width: 0, height: 0)
+  } else {
+    EmptyView()
+  }
+}
+
 private struct BonsaiNativeImageView: View {
   @ObservedObject var node: BonsaiNativeNode
 
   var body: some View {
-    if node.imageSource == 1 {
-      if let url = remoteImageURL(node.text) {
-        AsyncImage(url: url) { phase in
-          switch phase {
-          case .empty:
-            RoundedRectangle(cornerRadius: node.imageCornerRadius ?? 0, style: .continuous)
-              .fill(.secondary.opacity(0.12))
-              .overlay {
-                ProgressView()
-              }
-              .frame(maxWidth: .infinity, maxHeight: node.imageMaxHeight, alignment: .leading)
-          case let .success(image):
-            styledFileImage(image.resizable().scaledToFit())
-          case .failure:
-            RoundedRectangle(cornerRadius: node.imageCornerRadius ?? 0, style: .continuous)
-              .fill(.secondary.opacity(0.12))
-              .overlay {
-                Image(systemName: "photo")
-                  .foregroundStyle(.secondary)
-              }
-              .frame(maxWidth: .infinity, maxHeight: node.imageMaxHeight, alignment: .leading)
-          @unknown default:
-            EmptyView()
+    Group {
+      if node.imageSource == 1 {
+        if let url = remoteImageURL(node.text) {
+          AsyncImage(url: url) { phase in
+            switch phase {
+            case .empty:
+              RoundedRectangle(cornerRadius: node.imageCornerRadius ?? 0, style: .continuous)
+                .fill(.secondary.opacity(0.12))
+                .overlay {
+                  ProgressView()
+                }
+                .frame(maxWidth: .infinity, maxHeight: node.imageMaxHeight, alignment: .leading)
+            case let .success(image):
+              styledFileImage(image.resizable().scaledToFit())
+            case .failure:
+              RoundedRectangle(cornerRadius: node.imageCornerRadius ?? 0, style: .continuous)
+                .fill(.secondary.opacity(0.12))
+                .overlay {
+                  Image(systemName: "photo")
+                    .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: node.imageMaxHeight, alignment: .leading)
+            @unknown default:
+              EmptyView()
+            }
           }
+        } else if let image = UIImage(contentsOfFile: node.text) {
+          styledFileImage(Image(uiImage: image).resizable().scaledToFit())
         }
-      } else if let image = UIImage(contentsOfFile: node.text) {
-        styledFileImage(Image(uiImage: image).resizable().scaledToFit())
-      }
-    } else {
-      let image = Image(systemName: node.text)
-      if let color = bonsaiNativeSemanticColor(node.imageColor) {
-        image.foregroundStyle(color)
       } else {
-        image
+        let image = Image(systemName: node.text)
+        if let color = bonsaiNativeSemanticColor(node.imageColor) {
+          image.foregroundStyle(color)
+        } else {
+          image
+        }
+      }
+    }
+    .background {
+      bonsaiNativeLifecycleProbeBackground {
+        BonsaiNativeMediaLifecycleProbeView(kind: "image")
       }
     }
   }
@@ -1113,6 +1284,7 @@ private struct BonsaiNativeYouTubeIframeView: UIViewRepresentable {
   }
 
   func makeUIView(context: Context) -> WKWebView {
+    BonsaiNativeListVirtualizationProbe.shared.mediaViewCreated(kind: "youtube-webkit")
     let configuration = WKWebViewConfiguration()
     configuration.allowsInlineMediaPlayback = true
     let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -1131,6 +1303,13 @@ private struct BonsaiNativeYouTubeIframeView: UIViewRepresentable {
     }
   }
 
+  static func dismantleUIView(_ webView: WKWebView, coordinator _: Coordinator) {
+    webView.stopLoading()
+    webView.navigationDelegate = nil
+    webView.uiDelegate = nil
+    BonsaiNativeListVirtualizationProbe.shared.mediaViewDestroyed(kind: "youtube-webkit")
+  }
+
   private func load(_ webView: WKWebView, context: Context) {
     context.coordinator.lastPayload = payload
     webView.loadHTMLString(youtubeHTML(payload: payload), baseURL: nil)
@@ -1138,6 +1317,44 @@ private struct BonsaiNativeYouTubeIframeView: UIViewRepresentable {
 
   final class Coordinator {
     var lastPayload: String?
+  }
+}
+
+private struct BonsaiNativeDeferredYouTubeIframeView: View {
+  let payload: String
+  @State private var isLoaded = false
+
+  var body: some View {
+    Group {
+      if isLoaded {
+        BonsaiNativeYouTubeIframeView(payload: payload)
+          .allowsHitTesting(false)
+      } else {
+        Button {
+          isLoaded = true
+        } label: {
+          ZStack {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+              .fill(.secondary.opacity(0.12))
+            VStack(spacing: 8) {
+              Image(systemName: "play.circle.fill")
+                .font(.system(size: 40, weight: .semibold))
+              Text("YouTube")
+                .font(bonsaiNativePreferredFont(.headline))
+            }
+            .foregroundStyle(.secondary)
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+      }
+    }
+    .background {
+      bonsaiNativeLifecycleProbeBackground {
+        BonsaiNativeMediaLifecycleProbeView(kind: "youtube-preview")
+      }
+    }
   }
 }
 
@@ -1910,7 +2127,16 @@ private struct BonsaiNativeTextFieldView: View {
             get: { node.text },
             set: { value in
               node.text = value
+              let startedAt = BonsaiNativeListVirtualizationProbe.shared.operationStarted(
+                name: "text_change",
+                listID: node.id
+              )
               model.sendChange(node.changeEventId, text: value)
+              BonsaiNativeListVirtualizationProbe.shared.operationFinished(
+                name: "text_change",
+                listID: node.id,
+                startedAt: startedAt
+              )
             }
           )
         )
@@ -1929,7 +2155,16 @@ private struct BonsaiNativeTextFieldView: View {
           clearButtonMode: node.textFieldClearButton,
           onChange: { value in
             node.text = value
+            let startedAt = BonsaiNativeListVirtualizationProbe.shared.operationStarted(
+              name: "text_change",
+              listID: node.id
+            )
             model.sendChange(node.changeEventId, text: value)
+            BonsaiNativeListVirtualizationProbe.shared.operationFinished(
+              name: "text_change",
+              listID: node.id,
+              startedAt: startedAt
+            )
           },
           onSubmit: {
             model.sendClick(node.clickEventId)
@@ -1946,7 +2181,16 @@ private struct BonsaiNativeTextFieldView: View {
               get: { node.text },
               set: { value in
                 node.text = value
+                let startedAt = BonsaiNativeListVirtualizationProbe.shared.operationStarted(
+                  name: "text_change",
+                  listID: node.id
+                )
                 model.sendChange(node.changeEventId, text: value)
+                BonsaiNativeListVirtualizationProbe.shared.operationFinished(
+                  name: "text_change",
+                  listID: node.id,
+                  startedAt: startedAt
+                )
               }
             ),
             axis: .vertical
@@ -1958,7 +2202,16 @@ private struct BonsaiNativeTextFieldView: View {
               get: { node.text },
               set: { value in
                 node.text = value
+                let startedAt = BonsaiNativeListVirtualizationProbe.shared.operationStarted(
+                  name: "text_change",
+                  listID: node.id
+                )
                 model.sendChange(node.changeEventId, text: value)
+                BonsaiNativeListVirtualizationProbe.shared.operationFinished(
+                  name: "text_change",
+                  listID: node.id,
+                  startedAt: startedAt
+                )
               }
             )
           )
@@ -2266,7 +2519,16 @@ private struct BonsaiNativeNodeView: View {
             get: { node.text },
             set: { value in
               node.text = value
+              let startedAt = BonsaiNativeListVirtualizationProbe.shared.operationStarted(
+                name: "text_change",
+                listID: node.id
+              )
               model.sendChange(node.changeEventId, text: value)
+              BonsaiNativeListVirtualizationProbe.shared.operationFinished(
+                name: "text_change",
+                listID: node.id,
+                startedAt: startedAt
+              )
             }
           )
         )
@@ -2443,8 +2705,7 @@ private struct BonsaiNativeNodeView: View {
       if node.text == "congrats-effect" {
         BonsaiNativeCongratsEffectView()
       } else if let payload = youtubePayload(from: node.text) {
-        BonsaiNativeYouTubeIframeView(payload: payload)
-          .allowsHitTesting(false)
+        BonsaiNativeDeferredYouTubeIframeView(payload: payload)
       } else {
         Text(node.text)
           .foregroundStyle(.secondary)
@@ -2536,7 +2797,18 @@ private struct BonsaiNativeNodeView: View {
       }
         .onDelete { offsets in
           guard let index = offsets.first else { return }
+          let startedAt = BonsaiNativeListVirtualizationProbe.shared.operationStarted(
+            name: "lazy_delete",
+            listID: node.id,
+            detail: "index=\(index)"
+          )
           model.sendChange(node.listDeleteEventId, text: String(index))
+          BonsaiNativeListVirtualizationProbe.shared.operationFinished(
+            name: "lazy_delete",
+            listID: node.id,
+            startedAt: startedAt,
+            detail: "index=\(index)"
+          )
         }
         .onMove { source, destination in
           moveLazyListRows(source: source, destination: destination)
@@ -2598,6 +2870,11 @@ private struct BonsaiNativeNodeView: View {
 
   private func commitLazyListMove(fromIndex: Int, toOffset: Int) {
     let eventId = node.listMoveEventId
+    let startedAt = BonsaiNativeListVirtualizationProbe.shared.operationStarted(
+      name: "lazy_move",
+      listID: node.id,
+      detail: "from_index=\(fromIndex) to_offset=\(toOffset)"
+    )
     BonsaiNativeListVirtualizationProbe.shared.debug(
       "lazy_move_commit_scheduled list=\(node.id.uuidString) from_index=\(fromIndex) to_offset=\(toOffset) version=\(node.lazyListVersion)"
     )
@@ -2606,6 +2883,12 @@ private struct BonsaiNativeNodeView: View {
         "lazy_move_commit_emit from_index=\(fromIndex) to_offset=\(toOffset)"
       )
       model.sendChange(eventId, text: "\(fromIndex):\(toOffset)")
+      BonsaiNativeListVirtualizationProbe.shared.operationFinished(
+        name: "lazy_move",
+        listID: node.id,
+        startedAt: startedAt,
+        detail: "from_index=\(fromIndex) to_offset=\(toOffset)"
+      )
     }
   }
 
@@ -2629,7 +2912,7 @@ private struct BonsaiNativeNodeView: View {
     BonsaiNativeLazyListRowView(
       providerId: providerId,
       index: index,
-      key: "\(node.lazyListVersion):\(index)",
+      key: "\(index)",
       version: node.lazyListVersion,
       owner: node,
       listID: node.id,
@@ -4207,15 +4490,21 @@ private struct BonsaiNativeLazyListRowView: View {
           .frame(minHeight: 44)
       }
     }
+    .background {
+      bonsaiNativeLifecycleProbeBackground {
+        BonsaiNativeRowLifecycleProbeView(listID: listID)
+      }
+    }
     .onAppear {
       isVisible = true
       releaseToken = nil
       focusedDisappearToken = nil
       owner.lazyListVisibleIndices.insert(index)
       if let child {
-        BonsaiNativeListVirtualizationProbe.shared.rowAppeared(
+        BonsaiNativeListVirtualizationProbe.shared.rowAppearedAtIndex(
           listID: listID,
           rowID: child.id,
+          index: index,
           totalRows: totalRows
         )
       } else {
@@ -4224,15 +4513,18 @@ private struct BonsaiNativeLazyListRowView: View {
       reportListPerf()
     }
     .onChange(of: version) { _, _ in
-      refreshRow()
+      if owner.lazyListInvalidatedIndices.contains(index) {
+        refreshRow()
+      }
     }
     .onDisappear {
       isVisible = false
       owner.lazyListVisibleIndices.remove(index)
       if let child {
-        BonsaiNativeListVirtualizationProbe.shared.rowDisappeared(
+        BonsaiNativeListVirtualizationProbe.shared.rowDisappearedAtIndex(
           listID: listID,
           rowID: child.id,
+          index: index,
           totalRows: totalRows
         )
       }
@@ -4250,9 +4542,10 @@ private struct BonsaiNativeLazyListRowView: View {
       child = cached
       touchRetainedIndex(index)
       BonsaiNativeListVirtualizationProbe.shared.rowCacheHit(listID: listID)
-      BonsaiNativeListVirtualizationProbe.shared.rowAppeared(
+      BonsaiNativeListVirtualizationProbe.shared.rowAppearedAtIndex(
         listID: listID,
         rowID: cached.id,
+        index: index,
         totalRows: totalRows
       )
       reportListPerf()
@@ -4287,9 +4580,10 @@ private struct BonsaiNativeLazyListRowView: View {
       elapsedMs: renderElapsedMs
     )
     BonsaiNativeListVirtualizationProbe.shared.rowRetained(listID: listID, rowID: rendered.id)
-    BonsaiNativeListVirtualizationProbe.shared.rowAppeared(
+    BonsaiNativeListVirtualizationProbe.shared.rowAppearedAtIndex(
       listID: listID,
       rowID: rendered.id,
+      index: index,
       totalRows: totalRows
     )
     trimRetainedRows()
@@ -4817,6 +5111,7 @@ public func bonsai_native_swiftui_set_children(
   if node.lazyListRowCount != 0 {
     node.lazyListRowCount = 0
   }
+  node.lazyListInvalidatedIndices.removeAll()
   let children: [BonsaiNativeNode]
   if let childPointers {
     children = (0..<Int(count)).compactMap { index in
@@ -4835,7 +5130,9 @@ public func bonsai_native_swiftui_set_lazy_list_rows(
   _ pointer: UnsafeMutableRawPointer?,
   _ providerId: Int32,
   _ count: Int32,
-  _ version: Int32
+  _ version: Int32,
+  _ invalidatedIndexPointer: UnsafePointer<Int32>?,
+  _ invalidatedIndexCount: Int32
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   if !node.children.isEmpty {
@@ -4844,14 +5141,25 @@ public func bonsai_native_swiftui_set_lazy_list_rows(
   if node.lazyListProviderId != providerId {
     node.lazyListProviderId = providerId
   }
+  let rowCount = Int(count)
+  let providerInvalidatedIndices: Set<Int>
+  if let invalidatedIndexPointer {
+    providerInvalidatedIndices = Set(
+      (0..<Int(invalidatedIndexCount)).map { index in
+        Int(invalidatedIndexPointer[index])
+      }
+    )
+  } else {
+    providerInvalidatedIndices = []
+  }
+  node.lazyListInvalidatedIndices = providerInvalidatedIndices
   let nextVersion = Int(version)
   if node.lazyListVersion != nextVersion {
     node.lazyListVersion = nextVersion
   }
-  let rowCount = Int(count)
-  let staleIndices = node.lazyListRowsByIndex.keys.filter { index in
+  let staleIndices = Set(node.lazyListRowsByIndex.keys.filter { index in
     index < 0 || index >= rowCount
-  }
+  }).union(providerInvalidatedIndices)
   for index in staleIndices {
     node.lazyListRowsByIndex[index] = nil
     node.lazyListRowKeyByIndex[index] = nil
@@ -4876,6 +5184,7 @@ public func bonsai_native_swiftui_clear_lazy_list_rows(_ pointer: UnsafeMutableR
   node.lazyListRowKeyByIndex.removeAll()
   node.lazyListRetainedOrder.removeAll()
   node.lazyListVisibleIndices.removeAll()
+  node.lazyListInvalidatedIndices.removeAll()
 }
 
 @_cdecl("bonsai_native_swiftui_register_lazy_list_callbacks")
